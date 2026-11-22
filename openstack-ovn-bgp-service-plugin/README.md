@@ -1,125 +1,72 @@
 # OpenStack OVN BGP Service Plugin
 
-Neutron 2026.2 の組み込み `ovn-bgp` service plugin と OVN Neutron Agent の `ovn-bgp` 拡張を有効にし、spine から CirrOS VM の固定 IP へ直接到達できるか、テナントのホスト経路を広告・撤回して検証する。Floating IP は割り当てない。OVN が Linux VRF のテーブル 42 に置いた経路を chassis の FRR が取得し、leaf、spine の順に eBGP Unnumbered で伝える。ピアはリンクのインターフェース名で指定する。leaf から受信するデフォルト経路はテーブル 10 に入れ、OVN の戻り経路に使う。
+Neutron 2026.2 の組み込み `ovn-bgp` service plugin と OVN Neutron Agent を使う。CirrOS VM は flat provider network に直接接続し、固定 IP `10.53.0.22/32` を両 ToR に広告する。Neutron ルーターと Floating IP の作成は不要。図の `bgp-lr-main` はプラグインが OVN 内に作成する論理ルーター。 [Neutron 2026.2 の provider network 実装](https://github.com/openstack/neutron/blob/b82b437de7/neutron/services/bgp/commands.py#L271-L305)
 
-## 論理構成
+## 検証ネットワーク
 
-![spine から chassis への eBGP Unnumbered、固定 IP の広告と OVN 転送の未達箇所](network.svg)
+![Dual ToR で二重接続した OpenStack chassis と、flat provider network 上の CirrOS VM](network.svg)
 
 [図のソース](network.dot)
 
-`spine:eth1` と `leaf:eth2`、および `leaf:eth1` と `ovnbgp-uplink` は veth。後者の chassis 側 FRR は OVS の `br-bgp-0` でピアを確立する。
+OpenStack chassis VM は Containerlab の `kind: host`。ToR 側の `eth1` をそれぞれ chassis の `ovnbgp-uplink` と `ovnbgp-uplink1` に接続し、独立した OVS ブリッジ `br-bgp-0` と `br-bgp-1` に収容する。chassis FRR はその2つのブリッジをピアのインターフェースに指定し、`lo` のノード IP `203.0.113.31/32` と、OVN がテーブル 42 に追加した VM /32 を両 ToR に広告する。全4本のファブリックリンクで eBGP Unnumbered を使う。
+
+chassis のテーブル 10 は IPv6 next hop 付きの IPv4 デフォルトを両 ToR から学習する。CirrOS のゲスト NIC は Neutron DHCP で構成される。provider network のゲートウェイは OVN BGP プラグインがサブネットの DHCP 設定から取り込む。
 
 ## 構築
 
-node3 上のこのラボ専用 Ubuntu 26.04 amd64 VM で実行する。DevStack は VM のパッケージ、サービス、ファイアウォールを変更するため、セットアップ前の状態を残したい場合は VM のスナップショットを取得する。node3 の割り当ては 8 vCPU、16 GiB メモリ、120 GiB ディスク。CirrOS は QEMU で起動するため、ネストされた KVM は不要。パッケージ、Git リポジトリ、CirrOS イメージ、コンテナイメージへのアクセスが必要。
-
-[共通手順](../common/README.md)で Docker と containerlab を用意する。以下は専用 VM の sudo が使える管理ユーザーで実行する。DevStack は非 root の sudo パスワード不要ユーザーで実行する。
+[共通セットアップ](../common/README.md)で用意した Ubuntu 26.04 amd64 専用 VM で実行する。DevStack はパッケージとサービスを構成する。CirrOS は QEMU で起動する。
 
 ```bash
 ./setup-devstack.sh
+sudo ./containerlab.sh deploy
 ```
 
-スクリプトは専用パスワードを生成し、DevStack の `local.conf` にアクセス権 0600 で保存する。
+`containerlab.sh` はホスト名が `infra-lab-openstack` の VM で動く。`deploy` は veth、ループバック、OVS 接続、FRR、chassis の経路ポリシーを構成する。デプロイ後にホスト側の設定だけを再適用する場合は `sudo ./containerlab.sh configure` を使う。旧トポロジーから移行する場合は旧チェックアウトで Containerlab を停止し、旧ラボのルーターとテナントネットワークを片付けてから切り替える。
 
-DevStack が成功したら、このディレクトリに戻って実行する。
+## VM 固定 IP の検証
 
-```bash
-sudo containerlab deploy -t topology.clab.yml
-sudo ovs-vsctl --may-exist add-br br-ex
-sudo ovs-vsctl --may-exist add-br br-bgp-0
-sudo ovs-vsctl --may-exist add-port br-bgp-0 ovnbgp-uplink
-sudo ip link set br-bgp-0 up
-sudo ip link set br-ex up
-sudo ovs-vsctl set Open_vSwitch . external_ids:ovn-bridge-mappings=public:br-ex,br-bgp-0:br-bgp-0
-
-sudo sed -i 's/^bgpd=no$/bgpd=yes/' /etc/frr/daemons
-sudo install -o frr -g frr -m 640 frr/chassis.conf /etc/frr/frr.conf
-sudo systemctl restart frr
-```
-
-## テナント固定 IP の検証
-
-専用 VM で DevStack の `openrc` を読み込む。以下のコマンドは空のラボにリソースを作成する。
+空のラボで CirrOS イメージを Glance に登録してから実行する。
 
 ```bash
 source "$HOME/devstack-ovn-bgp/openrc" admin admin
-openstack network agent list
 openstack extension list --network | grep ovn-bgp
-
-openstack network create --external --provider-physical-network public \
-  --provider-network-type flat ovn-bgp-public
-openstack subnet create --network ovn-bgp-public \
-  --subnet-range 198.51.100.0/24 --gateway 198.51.100.1 \
-  --allocation-pool start=198.51.100.50,end=198.51.100.150 --no-dhcp ovn-bgp-public-v4
-
-openstack network create ovn-bgp-tenant
-openstack subnet create --network ovn-bgp-tenant \
-  --subnet-range 10.53.0.0/24 ovn-bgp-tenant-v4
-openstack router create ovn-bgp-router
-openstack router add subnet ovn-bgp-router ovn-bgp-tenant-v4
-openstack router set --external-gateway ovn-bgp-public --disable-snat ovn-bgp-router
-
+openstack network create --provider-physical-network public \
+  --provider-network-type flat ovn-bgp-direct
+openstack subnet create --network ovn-bgp-direct \
+  --subnet-range 10.53.0.0/24 --gateway 10.53.0.1 ovn-bgp-direct-v4
 openstack security group create ovn-bgp-icmp
 openstack security group rule create --ingress --protocol icmp \
   --remote-ip 203.0.113.10/32 ovn-bgp-icmp
 openstack flavor create --vcpus 1 --ram 512 --disk 1 ovn-bgp-tiny
-openstack port create --network ovn-bgp-tenant \
-  --fixed-ip subnet=ovn-bgp-tenant-v4,ip-address=10.53.0.22 \
+openstack port create --network ovn-bgp-direct \
+  --fixed-ip subnet=ovn-bgp-direct-v4,ip-address=10.53.0.22 \
   --security-group ovn-bgp-icmp ovn-bgp-vm-port
 openstack server create --wait --image cirros-0.6.3-x86_64-disk \
   --flavor ovn-bgp-tiny --port ovn-bgp-vm-port ovn-bgp-vm
-openstack subnet set --leak-routes ovn-bgp-tenant-v4
 ```
 
-Route leaking の有効化には、Geneve サブネットが外部ゲートウェイ付きの Neutron ルーターに接続されている必要がある。外部ゲートウェイはこの前提を満たすために作成する。FRR はテナント範囲の /32 だけをファブリックに広告する。
-
 ```bash
-sudo ovn-nbctl lr-list
+openstack router list
+openstack floating ip list
 sudo ovn-sbctl list Advertised_Route
-sudo ip route show table 42
-sudo ip route show table 10
-sudo ovs-ofctl dump-flows br-bgp-0
+sudo ip -4 route show table 42
+sudo ip -4 route show table 10
 sudo ./verify.sh advertised
 sudo ./verify.sh reachable
+sudo ./verify.sh failover
 ```
 
-`advertised` は固定 IP `10.53.0.22/32` をテーブル 42、spine の BGP RIB と Linux FIB で照合する。`reachable` は spine から CirrOS の固定 IP に直接 ping する。テーブル 10 では leaf から BGP で学習した IPv4 デフォルトと IPv6 next hop を確認する。CirrOS のテナント NIC は Neutron の DHCP で構成される。BGP の検証範囲は chassis から spine までのアンダーレイ。
+`advertised` は VM 固定 IP の /32 をテーブル 42、両 ToR と spine の FIB で確認する。併せて chassis のデフォルトと spine のノード /32 が ECMP になっていることを検証する。`reachable` は spine から chassis のループバックと VM の固定 IP に直接 ping する。`failover` は ToR の chassis 側リンクを順番に停止し、両宛先の経路と疎通がもう片方に収束し、復旧後に ECMP へ戻ることを確認する。実機では VM 再作成時に `ACTIVE` 直後に経路が再広告され、ゲストの DHCP 設定完了後に ping が通った。
 
-node3 の実機では固定 IP の広告・撤回・再広告を確認した。疎通試験では ICMP echo request が `ovnbgp-uplink` に到着し、CirrOS の TAP では観測されなかった。Northbound にはテナント CIDR 向けの経路がある一方、Southbound の `lr_in_ip_routing` には対応するフローがなく、`ovn-trace` は `bgp-lr-main-dead-lrp` を選択した。
-
-Route leaking を無効化して広告を撤回し、再び有効化して再広告を確認する。CirrOS と固定 IP は保持する。
+## 撤去
 
 ```bash
-openstack subnet set --no-leak-routes ovn-bgp-tenant-v4
-sudo ./verify.sh withdrawn
-openstack subnet set --leak-routes ovn-bgp-tenant-v4
-sudo ./verify.sh advertised
-```
-
-## 片付けと切り戻し
-
-OpenStack を保持する場合は、専用 VM 内で次の順でリソースを片付ける。
-
-```bash
-openstack subnet set --no-leak-routes ovn-bgp-tenant-v4
 openstack server delete --wait ovn-bgp-vm
-openstack port delete ovn-bgp-vm-port
-openstack router remove subnet ovn-bgp-router ovn-bgp-tenant-v4
-openstack router unset --external-gateway ovn-bgp-router
-openstack router delete ovn-bgp-router
-openstack network delete ovn-bgp-tenant
-openstack network delete ovn-bgp-public
+sudo ./verify.sh withdrawn
+openstack network delete ovn-bgp-direct
 openstack security group delete ovn-bgp-icmp
 openstack flavor delete ovn-bgp-tiny
-
-sudo ovs-vsctl --if-exists del-port br-bgp-0 ovnbgp-uplink
-sudo ovs-vsctl --if-exists del-br br-bgp-0
-sudo containerlab destroy -t topology.clab.yml --cleanup
+sudo ./containerlab.sh destroy
 ```
 
-DevStack や chassis FRR の導入を含めて切り戻す場合は、専用 VM を構築前のスナップショットに戻すか、共通手順で専用 VM を作り直す。再実行前に VM 内の管理アドレスとルートを確認する。
-
-- [Neutron 2026.2 の OVN BGP service plugin](https://docs.openstack.org/neutron/2026.2/admin/ovn/bgp.html)
-- [Neutron 2026.2 の BGP 統合テスト](https://docs.openstack.org/neutron/2026.2/ovn/bgp_tempest_job.html)
-- [統合テストのバージョン固定と DevStack 設定](https://github.com/openstack/neutron/blob/stable/2026.2/zuul.d/tempest-multinode-bgp.yaml)
+VM を作成する前に失敗した場合や分離済みのポートが残っている場合は、ネットワークを削除する前に `openstack port delete ovn-bgp-vm-port` を実行する。DevStack 自体の切り戻しは共通手順に従う。

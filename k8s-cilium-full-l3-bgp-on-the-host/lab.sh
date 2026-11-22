@@ -7,9 +7,10 @@ if [[ "$(uname -s)" != Linux || "$EUID" != 0 ]]; then
 fi
 
 action=${1:-}
-case "$action" in
-  up|verify|down) ;;
-  *) echo "Usage: $0 {up|verify|down}" >&2; exit 2 ;;
+failover=${2:-}
+case "$action:$failover:$#" in
+  up::1|verify::1|verify:--failover:2|down::1) ;;
+  *) echo "Usage: $0 {up|verify [--failover]|down}" >&2; exit 2 ;;
 esac
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -20,9 +21,10 @@ exec 9>"$state/lock"
 flock 9
 
 node=cilium-l3-node
+node_ip=10.220.255.10
 node_frr=clab-cilium-l3-node-frr
 host_frr=clab-cilium-l3-kube-host-frr
-tor=clab-cilium-l3-tor1
+tors=(clab-cilium-l3-tor1 clab-cilium-l3-tor2)
 client=clab-cilium-l3-client
 uplink=cilium-uplink
 return_link=cilium-routes
@@ -50,6 +52,7 @@ forward_rule() {
 
 configure_forwarding() {
   forward_rule "$1" -i "$uplink" -s "$client_network" -d "$pod_network" -j ACCEPT
+  forward_rule "$1" -i "$return_link" -s "$client_network" -d "$pod_network" -j ACCEPT
   forward_rule "$1" -o "$return_link" -s "$pod_network" -d "$client_network" -j ACCEPT
 }
 
@@ -64,11 +67,20 @@ configure_pod_routing() {
   ip link set "$return_link" master "$egress_vrf"
   ip link set "$return_link" up
   sysctl -w "net.ipv6.conf.$return_link.disable_ipv6=0"
+  if [[ -z $(ip -4 rule show pref 990) ]]; then
+    ip -4 rule add pref 990 iif "$egress_vrf" to "$pod_network" lookup main suppress_prefixlength 0
+  fi
   if [[ -z $(ip -4 rule show pref 22010) ]]; then
     ip -4 rule add pref 22010 from "$pod_network" lookup main suppress_prefixlength 0
   fi
   if [[ -z $(ip -4 rule show pref 22011) ]]; then
     ip -4 rule add pref 22011 from "$pod_network" lookup "$egress_table"
+  fi
+  if [[ -z $(ip -4 rule show pref 22008) ]]; then
+    ip -4 rule add pref 22008 from "$node_ip/32" lookup "$egress_table"
+  fi
+  if [[ -z $(ip -4 rule show pref 22009) ]]; then
+    ip -4 rule add pref 22009 from "$node_ip/32" unreachable
   fi
   if [[ -z $(ip -4 rule show pref 22012) ]]; then
     ip -4 rule add pref 22012 from "$pod_network" unreachable
@@ -80,7 +92,8 @@ up() {
     if [[ -e /etc/kubernetes/admin.conf || -e /etc/kubernetes/manifests/kube-apiserver.yaml ]] ||
        docker container inspect "$node_frr" >/dev/null 2>&1 ||
        docker container inspect "$host_frr" >/dev/null 2>&1 ||
-       docker container inspect "$tor" >/dev/null 2>&1 ||
+       docker container inspect "${tors[0]}" >/dev/null 2>&1 ||
+       docker container inspect "${tors[1]}" >/dev/null 2>&1 ||
        docker container inspect "$client" >/dev/null 2>&1 ||
        ip link show "$uplink" >/dev/null 2>&1 ||
        ip link show "$egress_vrf" >/dev/null 2>&1; then
@@ -99,6 +112,7 @@ up() {
   modprobe br_netfilter
   modprobe vrf
   setup_egress
+  ip address replace "$node_ip/32" dev lo
   sysctl -w net.ipv4.ip_forward=1
   install -D -m 0644 containerd.toml /etc/containerd/cilium-lab.toml
   install -m 0644 containerd-cilium-lab.service /etc/systemd/system/
@@ -126,14 +140,27 @@ up() {
       echo "Earlier kubeadm initialization was incomplete. Run '$0 down' before retrying." >&2
       return 1
     fi
-    local management_ip
-    management_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i=1; i<NF; i++) if ($i=="src") {print $(i+1); exit}}')
-    [[ -n $management_ip ]]
+    cat > "$state/init.yaml" <<EOF
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: $node_ip
+nodeRegistration:
+  name: $node
+  criSocket: $cri
+  kubeletExtraArgs:
+    - name: node-ip
+      value: $node_ip
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: $(kubeadm version -o short)
+networking:
+  podSubnet: $pod_network
+  serviceSubnet: 10.221.0.0/16
+EOF
     touch "$state/kubeadm-started"
-    kubeadm init --node-name "$node" --cri-socket "$cri" \
-      --apiserver-advertise-address "$management_ip" \
-      --kubernetes-version "$(kubeadm version -o short)" \
-      --pod-network-cidr "$pod_network" --service-cidr 10.221.0.0/16
+    kubeadm init --config "$state/init.yaml"
     touch "$state/kubeadm-ready"
   fi
 
@@ -167,48 +194,95 @@ check_peers() {
     ' >/dev/null
 }
 
-check_route() {
-  docker exec "$1" ip -j -4 route show exact "$2" |
-    jq -e --arg dev "$3" '
-      any(.[]; .protocol == "bgp" and .dev == $dev and .via.family == "inet6")
-    ' >/dev/null
-}
-
-check_default() {
-  "$@" | jq -e '
-    length == 1 and all(.[]; .dst == "default" and .protocol == "bgp" and .via.family == "inet6")
+check_routes() {
+  local interfaces=$1
+  shift
+  "$@" | jq -e --argjson interfaces "$interfaces" '
+    [.[] | select(.protocol == "bgp") | (.nexthops // [.])[] |
+      select(.via.family == "inet6") | .dev] | sort == ($interfaces | sort)
   ' >/dev/null
 }
 
-verify() {
-  local pod_ip pod_cidr deadline
-  kubectl wait --for=condition=Ready --timeout=180s "node/$node"
-  kubectl -n lab-probe wait --for=condition=Ready --timeout=180s pod/probe
-  kubectl -n lab-probe wait --timeout=120s \
-    --for="jsonpath={.status.loadBalancer.ingress[0].ip}=$vip" service/probe
-  pod_ip=$(kubectl -n lab-probe get pod probe -o 'jsonpath={.status.podIP}')
-  pod_cidr=$(kubectl get node "$node" -o 'jsonpath={.spec.podCIDR}')
+check_tors() {
+  local pod_ip=$1 tor prefix
+  shift
+  for tor in "$@"; do
+    for prefix in "$pod_ip/32" "$node_ip/32" "$vip/32"; do
+      check_routes '["eth1"]' docker exec "$tor" ip -j -4 route show exact "$prefix" || return 1
+    done
+  done
+}
 
-  deadline=$((SECONDS + 90))
-  until check_peers "$node_frr" '["eth1","eth2","eth3"]' && check_peers "$tor" '["eth1","eth2"]' &&
-        check_peers "$client" '["eth1"]' &&
-        check_default ip -4 -j route show table "$egress_table" default &&
-        check_default docker exec "$client" ip -4 -j route show default &&
-        check_route "$node_frr" "$pod_cidr" eth1 && check_route "$node_frr" "$vip/32" eth1 &&
-        check_route "$node_frr" "$client_network" eth2 &&
-        check_route "$tor" "$pod_cidr" eth1 && check_route "$tor" "$vip/32" eth1; do
+wait_for_fabric() {
+  local pod_ip=$1 client_interfaces=$2 node_interfaces=$3
+  shift 3
+  local deadline=$((SECONDS + 90))
+  until check_routes "$client_interfaces" docker exec "$client" ip -j -4 route show default &&
+        check_routes "$node_interfaces" docker exec "$node_frr" ip -j -4 route show exact "$client_network" &&
+        check_tors "$pod_ip" "$@"; do
     if (( SECONDS >= deadline )); then
       docker exec "$node_frr" vtysh -c 'show bgp ipv4 unicast summary'
-      docker exec "$tor" vtysh -c 'show bgp ipv4 unicast summary'
       return 1
     fi
     sleep 2
   done
+}
 
-  ip -j -4 route get "$client_ip" from "$pod_ip" iif cilium_host |
+check_traffic() {
+  local pod_ip=$1 pod_dev=$2
+  ip -j -4 route get "$client_ip" from "$pod_ip" iif "$pod_dev" |
     jq -e --arg dev "$return_link" 'any(.[]; .dev == $dev and .via.family == "inet6")' >/dev/null
+  docker exec "$client" ping -c 2 -W 2 "$node_ip"
   docker exec "$client" ping -c 2 -W 2 "$pod_ip"
   docker exec "$client" wget -q -T 5 -O - "http://$vip/" | grep -Fx probe
+}
+
+set_tor_links() {
+  docker exec "$1" ip link set eth1 "$2"
+  docker exec "$1" ip link set eth2 "$2"
+}
+
+verify() {
+  local pod_ip pod_dev tor
+  kubectl wait --for=condition=Ready --timeout=180s "node/$node"
+  kubectl -n lab-probe wait --for=condition=Ready --timeout=180s pod/probe
+  kubectl -n lab-probe wait --timeout=120s \
+    --for="jsonpath={.status.loadBalancer.ingress[0].ip}=$vip" service/probe
+  kubectl get node "$node" -o json | jq -e --arg ip "$node_ip" \
+    'any(.status.addresses[]; .type == "InternalIP" and .address == $ip)' >/dev/null
+  ip -j -4 address show dev lo | jq -e --arg ip "$node_ip" \
+    'any(.[].addr_info[]; .local == $ip and .prefixlen == 32)' >/dev/null
+  pod_ip=$(kubectl -n lab-probe get pod probe -o 'jsonpath={.status.podIP}')
+  pod_dev=$(ip -j -4 route show exact "$pod_ip/32" |
+    jq -er '.[] | select(.protocol == "kernel") | .dev')
+  wait_for_fabric "$pod_ip" '["eth1","eth2"]' '["eth2","eth4"]' "${tors[@]}"
+  check_peers "$node_frr" '["eth1","eth2","eth3","eth4"]'
+  check_peers "$client" '["eth1","eth2"]'
+  for tor in "${tors[@]}"; do
+    check_peers "$tor" '["eth1","eth2"]'
+  done
+  check_routes '["cilium-routes"]' ip -j -4 route show table "$egress_table" default
+  check_routes '["eth3"]' docker exec "$node_frr" ip -j -4 route show exact "$pod_ip/32"
+  check_traffic "$pod_ip" "$pod_dev"
+
+  if [[ $failover == --failover ]]; then
+    trap 'for restore_tor in "${tors[@]}"; do set_tor_links "$restore_tor" up || true; done' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    for tor in "${tors[@]}"; do
+      set_tor_links "$tor" down
+      if [[ $tor == "${tors[0]}" ]]; then
+        wait_for_fabric "$pod_ip" '["eth2"]' '["eth4"]' "${tors[1]}"
+      else
+        wait_for_fabric "$pod_ip" '["eth1"]' '["eth2"]' "${tors[0]}"
+      fi
+      check_traffic "$pod_ip" "$pod_dev"
+      set_tor_links "$tor" up
+      wait_for_fabric "$pod_ip" '["eth1","eth2"]' '["eth2","eth4"]' "${tors[@]}"
+    done
+    trap - EXIT INT TERM
+    check_traffic "$pod_ip" "$pod_dev"
+  fi
 }
 
 down() {
@@ -220,6 +294,9 @@ down() {
     rm -f "$state/kubeadm-started" "$state/kubeadm-ready"
   fi
   configure_forwarding remove
+  ip -4 rule del pref 990 iif "$egress_vrf" to "$pod_network" lookup main suppress_prefixlength 0 2>/dev/null || true
+  ip -4 rule del pref 22009 from "$node_ip/32" unreachable 2>/dev/null || true
+  ip -4 rule del pref 22008 from "$node_ip/32" lookup "$egress_table" 2>/dev/null || true
   ip -4 rule del pref 22012 from "$pod_network" unreachable 2>/dev/null || true
   ip -4 rule del pref 22011 from "$pod_network" lookup "$egress_table" 2>/dev/null || true
   ip -4 rule del pref 22010 from "$pod_network" lookup main suppress_prefixlength 0 2>/dev/null || true
@@ -236,7 +313,8 @@ down() {
     rm -f /etc/systemd/system/containerd-cilium-lab.service /etc/containerd/cilium-lab.toml
     systemctl daemon-reload
   fi
-  rm -f "$state/owned"
+  ip address del "$node_ip/32" dev lo 2>/dev/null || true
+  rm -f "$state/owned" "$state/init.yaml"
 }
 
 "$action"

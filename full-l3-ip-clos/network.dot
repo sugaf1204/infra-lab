@@ -17,23 +17,23 @@ graph clos {
     <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
       <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
       <TR><TD COLSPAN="2"><B>leaf1</B><BR/>FRR · AS65101</TD></TR>
-      <TR><TD COLSPAN="2" PORT="eth3" BGCOLOR="#dbeafe">eth3</TD></TR>
+      <TR><TD PORT="eth3" BGCOLOR="#dbeafe">eth3</TD><TD PORT="eth4" BGCOLOR="#dbeafe">eth4</TD></TR>
     </TABLE>>];
   leaf2 [label=<
     <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
       <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
       <TR><TD COLSPAN="2"><B>leaf2</B><BR/>FRR · AS65102</TD></TR>
-      <TR><TD COLSPAN="2" PORT="eth3" BGCOLOR="#dbeafe">eth3</TD></TR>
+      <TR><TD PORT="eth3" BGCOLOR="#dbeafe">eth3</TD><TD PORT="eth4" BGCOLOR="#dbeafe">eth4</TD></TR>
     </TABLE>>];
   host1 [label=<
     <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#f0fdf4">
-      <TR><TD PORT="eth1" BGCOLOR="#dcfce7">eth1</TD></TR>
-      <TR><TD><B>host1</B><BR/>FRR · AS65211<BR/>lo 10.211.1.2/32</TD></TR>
+      <TR><TD PORT="eth1" BGCOLOR="#dcfce7">eth1</TD><TD PORT="eth2" BGCOLOR="#dcfce7">eth2</TD></TR>
+      <TR><TD COLSPAN="2"><B>host1</B><BR/>FRR · AS65211<BR/>lo 10.211.1.2/32</TD></TR>
     </TABLE>>];
   host2 [label=<
     <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#f0fdf4">
-      <TR><TD PORT="eth1" BGCOLOR="#dcfce7">eth1</TD></TR>
-      <TR><TD><B>host2</B><BR/>FRR · AS65212<BR/>lo 10.211.2.2/32</TD></TR>
+      <TR><TD PORT="eth1" BGCOLOR="#dcfce7">eth1</TD><TD PORT="eth2" BGCOLOR="#dcfce7">eth2</TD></TR>
+      <TR><TD COLSPAN="2"><B>host2</B><BR/>FRR · AS65212<BR/>lo 10.211.2.2/32</TD></TR>
     </TABLE>>];
 
   {rank=same; spine1; spine2}
@@ -45,5 +45,7 @@ graph clos {
   spine2:eth1:s -- leaf1:eth2:n;
   spine2:eth2:s -- leaf2:eth2:n;
   leaf1:eth3:s -- host1:eth1:n;
-  leaf2:eth3:s -- host2:eth1:n;
+  leaf1:eth4:s -- host2:eth1:n;
+  leaf2:eth3:s -- host1:eth2:n;
+  leaf2:eth4:s -- host2:eth2:n;
 }

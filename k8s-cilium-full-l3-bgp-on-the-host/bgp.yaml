@@ -6,7 +6,9 @@ metadata:
     lab: cilium-l3
 spec:
   advertisements:
-    - advertisementType: PodCIDR
+    - advertisementType: Interface
+      interface:
+        name: lo
     - advertisementType: Service
       service:
         addresses:

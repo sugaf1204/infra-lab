@@ -55,31 +55,53 @@ case "${1:-}" in
   *) echo "Usage: $0 [--failover]" >&2; exit 2 ;;
 esac
 
-wait_for_nexthops leaf1 10.211.2.2/32 '["eth1","eth2"]'
-wait_for_nexthops leaf2 10.211.1.2/32 '["eth1","eth2"]'
-for router in leaf1 leaf2; do
-  check_peers "$router" '["eth1","eth2","eth3"]'
-done
-for router in spine1 spine2; do
-  check_peers "$router" '["eth1","eth2"]'
-done
-for host in host1 host2; do
-  wait_for_nexthops "$host" 0.0.0.0/0 '["eth1"]'
-  check_peers "$host" '["eth1"]'
-done
-check_traffic
+check_dual_tor() {
+  local host router
+  for router in leaf1 leaf2; do
+    wait_for_nexthops "$router" 10.211.1.2/32 '["eth3"]'
+    wait_for_nexthops "$router" 10.211.2.2/32 '["eth4"]'
+    check_peers "$router" '["eth1","eth2","eth3","eth4"]'
+  done
+  for router in spine1 spine2; do
+    check_peers "$router" '["eth1","eth2"]'
+    wait_for_nexthops "$router" 10.211.1.2/32 '["eth1","eth2"]'
+    wait_for_nexthops "$router" 10.211.2.2/32 '["eth1","eth2"]'
+  done
+  for host in host1 host2; do
+    wait_for_nexthops "$host" 0.0.0.0/0 '["eth1","eth2"]'
+    check_peers "$host" '["eth1","eth2"]'
+  done
+  check_traffic
+}
+
+set_tor_host_links() {
+  node "$1" ip link set eth3 "$2"
+  node "$1" ip link set eth4 "$2"
+}
+
+check_dual_tor
 
 if [[ ${1:-} == --failover ]]; then
-  trap 'node leaf1 ip link set eth1 up' EXIT
+  trap 'set_tor_host_links "$tor" up' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  node leaf1 ip link set eth1 down
-  wait_for_nexthops leaf1 10.211.2.2/32 '["eth2"]'
-  wait_for_nexthops leaf2 10.211.1.2/32 '["eth2"]'
-  check_traffic
-  node leaf1 ip link set eth1 up
-  trap - EXIT
-  wait_for_nexthops leaf1 10.211.2.2/32 '["eth1","eth2"]'
-  wait_for_nexthops leaf2 10.211.1.2/32 '["eth1","eth2"]'
-  check_traffic
+  for tor in leaf1 leaf2; do
+    if [[ $tor == leaf1 ]]; then
+      remaining='["eth2"]'
+    else
+      remaining='["eth1"]'
+    fi
+    set_tor_host_links "$tor" down
+    for host in host1 host2; do
+      wait_for_nexthops "$host" 0.0.0.0/0 "$remaining"
+    done
+    for spine in spine1 spine2; do
+      wait_for_nexthops "$spine" 10.211.1.2/32 "$remaining"
+      wait_for_nexthops "$spine" 10.211.2.2/32 "$remaining"
+    done
+    check_traffic
+    set_tor_host_links "$tor" up
+    check_dual_tor
+  done
+  trap - EXIT INT TERM
 fi

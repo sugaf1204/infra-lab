@@ -24,6 +24,11 @@ topology:
       group: router
       binds:
         - frr/tor1.conf:/etc/frr/frr.conf:ro
+    tor2:
+      kind: linux
+      group: router
+      binds:
+        - frr/tor2.conf:/etc/frr/frr.conf:ro
     client:
       kind: linux
       group: router
@@ -40,7 +45,9 @@ topology:
         - frr/host.conf:/etc/frr/frr.conf:ro
   links:
     - endpoints: ["node-frr:eth2", "tor1:eth1"]
+    - endpoints: ["node-frr:eth4", "tor2:eth1"]
     - endpoints: ["tor1:eth2", "client:eth1"]
+    - endpoints: ["tor2:eth2", "client:eth2"]
     - type: host
       endpoint:
         node: node-frr

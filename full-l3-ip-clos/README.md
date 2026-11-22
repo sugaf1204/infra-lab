@@ -1,18 +1,18 @@
 # Full L3 IP Clos
 
-2 台の spine と 2 台の leaf を結ぶ IPv4 Clos。全リンクでインターフェース指定の eBGP Unnumbered を使う。各ホストはループバックの /32 を leaf に広告し、leaf から IPv6 next hop 付きの IPv4 デフォルトを学習する。対向ホストの /32 は2台の spine 経由で ECMP に入る。
+2 台の spine と 2 台の ToR を結ぶ IPv4 Clos。host1 と host2 は、それぞれ独立した `eth1` と `eth2` で leaf1 と leaf2 に接続する。各ホストは `lo` のノード IP を /32 で両 ToR に広告し、両 ToR から IPv6 next hop 付きの IPv4 デフォルトを学習する。全リンクがインターフェース指定の eBGP Unnumbered を使う。
 
-## 論理構成
+## 検証ネットワーク
 
-![2 台の spine と 2 台の leaf および両端ホストを結ぶ 6 本の eBGP Unnumbered リンク](network.svg)
+![2 台の spine と 2 台の ToR、および ToR へ二重接続したホスト](network.svg)
 
 [図のソース](network.dot)
 
-すべての実線は veth とその上の eBGP Unnumbered セッションを示す。
+すべての実線は veth とその上の eBGP Unnumbered セッションを示す。各ホストの2本のリンクは独立した L3 インターフェースとして扱う。
 
 ## 起動と検証
 
-[共通セットアップ](../common/README.md)後、このディレクトリで実行する。
+[共通セットアップ](../common/README.md)後、このディレクトリで実行する。旧トポロジーを使っている場合は、旧チェックアウトでラボを停止してから切り替える。
 
 ```bash
 sudo containerlab deploy -t topology.clab.yml
@@ -20,10 +20,10 @@ sudo ./verify.sh
 sudo ./verify.sh --failover
 ```
 
-通常の検証では全6本の BGP セッション、両ホストが BGP から学んだデフォルト、対向 /32 の ECMP、ホスト間の双方向 ping を確認する。障害試験では leaf1 の spine1 側リンクを落とし、両 leaf の next hop が spine2 だけに収束した後の双方向 ping を確認する。復旧後は 2 経路への復帰と疎通を再確認する。スクリプトは試験失敗時もリンクを復元する。
+通常の検証では全8本の BGP セッション、両ホストのデフォルト経路の ECMP、両 ToR の直接学習経路、両 spine のノード /32 への ECMP、ホスト間の双方向 ping を確認する。障害試験では ToR ごとにホスト側の2本を止め、両ホストのデフォルトと spine のノード /32 が残る ToR に収束することを確認する。両方の片系断で双方向 ping を行い、各試験後に ECMP へ戻ることを確認する。
 
 ```bash
-sudo docker exec clab-full-l3-ip-clos-leaf1 vtysh -c 'show bgp ipv4 unicast summary'
-sudo docker exec clab-full-l3-ip-clos-leaf1 vtysh -c 'show ip route 10.211.2.2/32'
+sudo docker exec clab-full-l3-ip-clos-host1 ip -4 route show default
+sudo docker exec clab-full-l3-ip-clos-spine1 vtysh -c 'show ip route 10.211.2.2/32'
 sudo containerlab destroy --cleanup -t topology.clab.yml
 ```

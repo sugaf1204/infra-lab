@@ -2,31 +2,38 @@ name: ovn-bgp
 
 mgmt:
   network: ovn-bgp-mgmt
-  ipv4-subnet: 172.30.12.0/24
+  skip-when-unused: true
 
 topology:
-  defaults:
-    kind: linux
-    image: quay.io/frrouting/frr:10.4.1
-    binds:
-      - ../common/frr/daemons:/etc/frr/daemons:ro
-    sysctls:
-      net.ipv4.ip_forward: "1"
-      net.ipv6.conf.all.disable_ipv6: "0"
-      net.ipv6.conf.default.disable_ipv6: "0"
-  nodes:
-    leaf:
+  kinds:
+    linux:
+      network-mode: none
+      image: quay.io/frrouting/frr:10.4.1
       binds:
-        - frr/leaf.conf:/etc/frr/frr.conf:ro
+        - ../common/frr/daemons:/etc/frr/daemons:ro
+      sysctls:
+        net.ipv4.ip_forward: "1"
+        net.ipv6.conf.all.disable_ipv6: "0"
+        net.ipv6.conf.default.disable_ipv6: "0"
+  nodes:
+    infra-lab-openstack:
+      kind: host
+    leaf1:
+      kind: linux
+      binds:
+        - frr/leaf1.conf:/etc/frr/frr.conf:ro
+    leaf2:
+      kind: linux
+      binds:
+        - frr/leaf2.conf:/etc/frr/frr.conf:ro
     spine:
+      kind: linux
       binds:
         - frr/spine.conf:/etc/frr/frr.conf:ro
       exec:
         - ip address replace 203.0.113.10/32 dev lo
   links:
-    - type: host
-      endpoint:
-        node: leaf
-        interface: eth1
-      host-interface: ovnbgp-uplink
-    - endpoints: ["leaf:eth2", "spine:eth1"]
+    - endpoints: ["leaf1:eth1", "infra-lab-openstack:ovnbgp-uplink"]
+    - endpoints: ["leaf2:eth1", "infra-lab-openstack:ovnbgp-uplink1"]
+    - endpoints: ["leaf1:eth2", "spine:eth1"]
+    - endpoints: ["leaf2:eth2", "spine:eth2"]

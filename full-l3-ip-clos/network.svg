@@ -31,8 +31,10 @@
 <text xml:space="preserve" text-anchor="start" x="71.38" y="-216.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth2</text>
 <text xml:space="preserve" text-anchor="start" x="42" y="-186.7" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="14.00" fill="#172b4d">leaf1</text>
 <text xml:space="preserve" text-anchor="start" x="10.12" y="-172.7" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">FRR · AS65101</text>
-<polygon fill="#dbeafe" stroke="none" points="3.12,-135 3.12,-164 111.62,-164 111.62,-135 3.12,-135"/>
-<text xml:space="preserve" text-anchor="start" x="44.25" y="-145.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth3</text>
+<polygon fill="#dbeafe" stroke="none" points="3.12,-135 3.12,-164 57.38,-164 57.38,-135 3.12,-135"/>
+<text xml:space="preserve" text-anchor="start" x="17.12" y="-145.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth3</text>
+<polygon fill="#dbeafe" stroke="none" points="57.38,-135 57.38,-164 111.62,-164 111.62,-135 57.38,-135"/>
+<text xml:space="preserve" text-anchor="start" x="71.38" y="-145.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth4</text>
 <polygon fill="none" stroke="#64748b" points="2.12,-134 2.12,-236 112.62,-236 112.62,-134 2.12,-134"/>
 </g>
 <!-- spine1&#45;&#45;leaf1 -->
@@ -50,8 +52,10 @@
 <text xml:space="preserve" text-anchor="start" x="240.38" y="-216.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth2</text>
 <text xml:space="preserve" text-anchor="start" x="211" y="-186.7" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="14.00" fill="#172b4d">leaf2</text>
 <text xml:space="preserve" text-anchor="start" x="179.12" y="-172.7" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">FRR · AS65102</text>
-<polygon fill="#dbeafe" stroke="none" points="172.12,-135 172.12,-164 280.62,-164 280.62,-135 172.12,-135"/>
-<text xml:space="preserve" text-anchor="start" x="213.25" y="-145.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth3</text>
+<polygon fill="#dbeafe" stroke="none" points="172.12,-135 172.12,-164 226.38,-164 226.38,-135 172.12,-135"/>
+<text xml:space="preserve" text-anchor="start" x="186.12" y="-145.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth3</text>
+<polygon fill="#dbeafe" stroke="none" points="226.38,-135 226.38,-164 280.62,-164 280.62,-135 226.38,-135"/>
+<text xml:space="preserve" text-anchor="start" x="240.38" y="-145.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth4</text>
 <polygon fill="none" stroke="#64748b" points="171.12,-134 171.12,-236 281.62,-236 281.62,-134 171.12,-134"/>
 </g>
 <!-- spine1&#45;&#45;leaf2 -->
@@ -85,8 +89,10 @@
 <g id="node5" class="node">
 <title>host1</title>
 <polygon fill="#f0fdf4" stroke="none" points="0,0 0,-87 112.75,-87 112.75,0 0,0"/>
-<polygon fill="#dcfce7" stroke="none" points="1,-57 1,-86 111.75,-86 111.75,-57 1,-57"/>
-<text xml:space="preserve" text-anchor="start" x="43.25" y="-67.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth1</text>
+<polygon fill="#dcfce7" stroke="none" points="1,-57 1,-86 56.38,-86 56.38,-57 1,-57"/>
+<text xml:space="preserve" text-anchor="start" x="15.56" y="-67.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth1</text>
+<polygon fill="#dcfce7" stroke="none" points="56.38,-57 56.38,-86 111.75,-86 111.75,-57 56.38,-57"/>
+<text xml:space="preserve" text-anchor="start" x="70.94" y="-67.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth2</text>
 <text xml:space="preserve" text-anchor="start" x="38.38" y="-37.7" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="14.00" fill="#172b4d">host1</text>
 <text xml:space="preserve" text-anchor="start" x="9.12" y="-23.7" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">FRR · AS65211</text>
 <text xml:space="preserve" text-anchor="start" x="8" y="-9.7" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">lo 10.211.1.2/32</text>
@@ -95,23 +101,35 @@
 <!-- leaf1&#45;&#45;host1 -->
 <g id="edge5" class="edge">
 <title>leaf1:s&#45;&#45;host1:n</title>
-<path fill="none" stroke="#475569" stroke-width="1.5" d="M57.38,-134C57.38,-134 56.38,-87 56.38,-87"/>
+<path fill="none" stroke="#475569" stroke-width="1.5" d="M30.25,-134C30.25,-134 28.69,-87 28.69,-87"/>
 </g>
 <!-- host2 -->
 <g id="node6" class="node">
 <title>host2</title>
 <polygon fill="#f0fdf4" stroke="none" points="171,0 171,-87 283.75,-87 283.75,0 171,0"/>
-<polygon fill="#dcfce7" stroke="none" points="172,-57 172,-86 282.75,-86 282.75,-57 172,-57"/>
-<text xml:space="preserve" text-anchor="start" x="214.25" y="-67.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth1</text>
+<polygon fill="#dcfce7" stroke="none" points="172,-57 172,-86 227.38,-86 227.38,-57 172,-57"/>
+<text xml:space="preserve" text-anchor="start" x="186.56" y="-67.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth1</text>
+<polygon fill="#dcfce7" stroke="none" points="227.38,-57 227.38,-86 282.75,-86 282.75,-57 227.38,-57"/>
+<text xml:space="preserve" text-anchor="start" x="241.94" y="-67.75" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">eth2</text>
 <text xml:space="preserve" text-anchor="start" x="209.38" y="-37.7" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="14.00" fill="#172b4d">host2</text>
 <text xml:space="preserve" text-anchor="start" x="180.12" y="-23.7" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">FRR · AS65212</text>
 <text xml:space="preserve" text-anchor="start" x="179" y="-9.7" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">lo 10.211.2.2/32</text>
 <polygon fill="none" stroke="#64748b" points="171,0 171,-87 283.75,-87 283.75,0 171,0"/>
 </g>
-<!-- leaf2&#45;&#45;host2 -->
+<!-- leaf1&#45;&#45;host2 -->
 <g id="edge6" class="edge">
+<title>leaf1:s&#45;&#45;host2:n</title>
+<path fill="none" stroke="#475569" stroke-width="1.5" d="M84.5,-134C84.5,-134 199.69,-87 199.69,-87"/>
+</g>
+<!-- leaf2&#45;&#45;host1 -->
+<g id="edge7" class="edge">
+<title>leaf2:s&#45;&#45;host1:n</title>
+<path fill="none" stroke="#475569" stroke-width="1.5" d="M199.25,-134C199.25,-134 84.06,-87 84.06,-87"/>
+</g>
+<!-- leaf2&#45;&#45;host2 -->
+<g id="edge8" class="edge">
 <title>leaf2:s&#45;&#45;host2:n</title>
-<path fill="none" stroke="#475569" stroke-width="1.5" d="M226.38,-134C226.38,-134 227.38,-87 227.38,-87"/>
+<path fill="none" stroke="#475569" stroke-width="1.5" d="M253.5,-134C253.5,-134 255.06,-87 255.06,-87"/>
 </g>
 </g>
 </svg>
