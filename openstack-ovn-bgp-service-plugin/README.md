@@ -28,6 +28,7 @@ DevStack が成功したら、このディレクトリに戻って実行する�
 
 ```bash
 sudo containerlab deploy -t topology.clab.yml
+sudo ovs-vsctl --may-exist add-br br-ex
 sudo ovs-vsctl --may-exist add-br br-bgp-0
 sudo ovs-vsctl --may-exist add-port br-bgp-0 ovnbgp-uplink
 sudo ip link set br-bgp-0 up
