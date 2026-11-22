@@ -1,10 +1,10 @@
 digraph cilium {
-  graph [rankdir=TB, bgcolor="#ffffff", pad=0.2, nodesep=0.48, ranksep=0.58,
+  graph [rankdir=TB, bgcolor="#ffffff", pad=0.2, nodesep=0.45, ranksep=0.55,
          fontname="Helvetica", newrank=true];
   node [shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#64748b",
         fontname="Helvetica", fontcolor="#172b4d", margin="0.14,0.1"];
-  edge [color="#475569", penwidth=1.4, fontname="Helvetica",
-        fontcolor="#334155", fontsize=10, arrowsize=0.7];
+  edge [color="#475569", penwidth=1.4, fontname="Helvetica", fontcolor="#334155",
+        fontsize=10, arrowsize=0.7];
 
   client [shape=plain, label=<
     <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#f0fdf4">
@@ -28,40 +28,29 @@ digraph cilium {
   subgraph cluster_node {
     label="Kubernetes node  |  VM · single-node kubeadm"; labeljust=l; labelloc=b;
     style=rounded; color="#94a3b8"; margin=16;
-    router [shape=plain, label=<
-      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-        <TR><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD><TD PORT="eth4" BGCOLOR="#dbeafe">eth4</TD></TR>
-        <TR><TD COLSPAN="2"><B>node-frr · AS65202</B><BR/>FRR container network namespace</TD></TR>
-        <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth3" BGCOLOR="#dbeafe">eth3</TD></TR>
-      </TABLE>>];
-
-    subgraph cluster_hostns {
-      label="Host network namespace"; labeljust=l; labelloc=b; style=rounded; color="#94a3b8"; margin=16;
-      uplink [label="cilium-uplink", fillcolor="#dbeafe"];
-      bgp [label="Cilium BGP · AS65201\nExports node lo /32 + VIP"];
-      datapath [label="Linux datapath + kube-proxy\nlo 10.220.255.10/32\nLoadBalancer VIP 10.220.250.10"];
-      egress [shape=plain, label=<
+    subgraph cluster_host {
+      label="Host network namespace"; labeljust=l; labelloc=b; style=rounded; color="#94a3b8";
+      edge_frr [shape=plain, label=<
         <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-          <TR><TD PORT="routes" BGCOLOR="#dbeafe">cilium-routes</TD></TR>
-          <TR><TD><B>VRF cilium-egress</B> · table 220<BR/>kube-host-frr · AS65204<BR/>Redistributes Pod /32<BR/>IPv4 default via IPv6</TD></TR>
+          <TR><TD PORT="up1" BGCOLOR="#dbeafe">cilium-tor1</TD><TD PORT="up2" BGCOLOR="#dbeafe">cilium-tor2</TD></TR>
+          <TR><TD COLSPAN="2"><B>FRR · AS65202</B><BR/>cilium-egress VRF · table 220<BR/>IPv4 default via IPv6</TD></TR>
         </TABLE>>];
-
-      uplink -> bgp [dir=none, color="#2563a5", style=dashed, label="BGP socket"];
-      uplink -> datapath [label="Ingress"];
-      datapath -> egress [dir=both, color="#15803d", fontcolor="#166534", label="  Pod ingress and\n  Pod/node egress", constraint=false];
-      {rank=same; uplink; egress}
-      {rank=same; bgp; datapath}
+      local_frr [label="FRR · default VRF\nlo 10.220.255.2\nNode and Pod /32"];
+      cilium [label="Cilium BGP · AS65201\nlo 10.220.255.10\nLoadBalancer VIP /32"];
+      datapath [label="Cilium CNI + kube-proxy\nLinux routing"];
+      {rank=same; datapath; local_frr}
+      edge_frr -> datapath [dir=both, label="  Workload traffic"];
+      edge_frr -> local_frr [dir=back, style=dashed, color="#2563a5", label="  Local prefixes"];
+      local_frr -> cilium [dir=back, style=dashed, color="#2563a5", label="Numbered eBGP · lo"];
     }
     subgraph cluster_pod {
       label="Probe Pod"; labelloc=b; style=rounded; color="#94a3b8";
       pod [label="eth0\nPod IP", fillcolor="#f0fdf4"];
     }
-    router:eth1:s -> uplink [dir=none, color="#475569"];
-    router:eth3:s -> egress:routes:n [dir=none, color="#475569"];
     datapath -> pod [dir=none, label="  lxc… ↔ eth0 · veth"];
   }
   client:eth1:s -> tor1:eth2:n [dir=none];
   client:eth2:s -> tor2:eth2:n [dir=none];
-  tor1:eth1:s -> router:eth2:n [dir=none];
-  tor2:eth1:s -> router:eth4:n [dir=none];
+  tor1:eth1:s -> edge_frr:up1:n [dir=none];
+  tor2:eth1:s -> edge_frr:up2:n [dir=none];
 }

@@ -16,8 +16,8 @@
 </g>
 <g id="clust3" class="cluster">
 <title>cluster_guest</title>
-<path fill="#ffffff" stroke="#94a3b8" d="M94,-47C94,-47 186,-47 186,-47 192,-47 198,-53 198,-59 198,-59 198,-134.4 198,-134.4 198,-140.4 192,-146.4 186,-146.4 186,-146.4 94,-146.4 94,-146.4 88,-146.4 82,-140.4 82,-134.4 82,-134.4 82,-59 82,-59 82,-53 88,-47 94,-47"/>
-<text xml:space="preserve" text-anchor="middle" x="123.38" y="-52.7" font-family="Helvetica,sans-Serif" font-size="14.00">CirrOS VM</text>
+<path fill="#ffffff" stroke="#94a3b8" d="M115,-47C115,-47 207,-47 207,-47 213,-47 219,-53 219,-59 219,-59 219,-134.4 219,-134.4 219,-140.4 213,-146.4 207,-146.4 207,-146.4 115,-146.4 115,-146.4 109,-146.4 103,-140.4 103,-134.4 103,-134.4 103,-59 103,-59 103,-53 109,-47 115,-47"/>
+<text xml:space="preserve" text-anchor="middle" x="144.38" y="-52.7" font-family="Helvetica,sans-Serif" font-size="14.00">CirrOS VM</text>
 </g>
 <!-- spine -->
 <g id="node1" class="node">
@@ -97,15 +97,15 @@
 <!-- pipeline -->
 <g id="node5" class="node">
 <title>pipeline</title>
-<path fill="#eff6ff" stroke="#64748b" d="M223.08,-327.2C223.08,-327.2 46.92,-327.2 46.92,-327.2 40.92,-327.2 34.92,-321.2 34.92,-315.2 34.92,-315.2 34.92,-294.8 34.92,-294.8 34.92,-288.8 40.92,-282.8 46.92,-282.8 46.92,-282.8 223.08,-282.8 223.08,-282.8 229.08,-282.8 235.08,-288.8 235.08,-294.8 235.08,-294.8 235.08,-315.2 235.08,-315.2 235.08,-321.2 229.08,-327.2 223.08,-327.2"/>
-<text xml:space="preserve" text-anchor="middle" x="135" y="-306.7" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">OVS br&#45;int</text>
-<text xml:space="preserve" text-anchor="middle" x="135" y="-291.7" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">OVN BGP fabric · bgp&#45;lr&#45;main</text>
+<path fill="#eff6ff" stroke="#64748b" d="M236.08,-327.2C236.08,-327.2 59.92,-327.2 59.92,-327.2 53.92,-327.2 47.92,-321.2 47.92,-315.2 47.92,-315.2 47.92,-294.8 47.92,-294.8 47.92,-288.8 53.92,-282.8 59.92,-282.8 59.92,-282.8 236.08,-282.8 236.08,-282.8 242.08,-282.8 248.08,-288.8 248.08,-294.8 248.08,-294.8 248.08,-315.2 248.08,-315.2 248.08,-321.2 242.08,-327.2 236.08,-327.2"/>
+<text xml:space="preserve" text-anchor="middle" x="148" y="-306.7" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">OVS br&#45;int</text>
+<text xml:space="preserve" text-anchor="middle" x="148" y="-291.7" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">OVN BGP fabric · bgp&#45;lr&#45;main</text>
 </g>
 <!-- ports&#45;&gt;pipeline -->
 <g id="edge1" class="edge">
 <title>ports:s&#45;&gt;pipeline:n</title>
-<path fill="none" stroke="#475569" stroke-width="1.4" d="M127,-378.45C127,-355.4 135,-350.25 135,-327.2"/>
-<text xml:space="preserve" text-anchor="middle" x="171.41" y="-348.95" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#334155"> &#160;OVS patch pairs</text>
+<path fill="none" stroke="#475569" stroke-width="1.4" d="M127,-378.45C127,-353.83 148,-351.82 148,-327.2"/>
+<text xml:space="preserve" text-anchor="middle" x="180.21" y="-348.95" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#334155"> &#160;OVS patch pairs</text>
 </g>
 <!-- routing -->
 <g id="node7" class="node">
@@ -124,29 +124,29 @@
 <!-- provider -->
 <g id="node6" class="node">
 <title>provider</title>
-<path fill="#eff6ff" stroke="#64748b" d="M244.2,-231.55C244.2,-231.55 35.8,-231.55 35.8,-231.55 29.8,-231.55 23.8,-225.55 23.8,-219.55 23.8,-219.55 23.8,-199.15 23.8,-199.15 23.8,-193.15 29.8,-187.15 35.8,-187.15 35.8,-187.15 244.2,-187.15 244.2,-187.15 250.2,-187.15 256.2,-193.15 256.2,-199.15 256.2,-199.15 256.2,-219.55 256.2,-219.55 256.2,-225.55 250.2,-231.55 244.2,-231.55"/>
-<text xml:space="preserve" text-anchor="middle" x="140" y="-211.05" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">br&#45;ex + br&#45;int patch pairs</text>
-<text xml:space="preserve" text-anchor="middle" x="140" y="-196.05" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">Flat provider network · 10.53.0.0/24</text>
+<path fill="#eff6ff" stroke="#64748b" d="M285.83,-231.55C285.83,-231.55 36.17,-231.55 36.17,-231.55 30.17,-231.55 24.17,-225.55 24.17,-219.55 24.17,-219.55 24.17,-199.15 24.17,-199.15 24.17,-193.15 30.17,-187.15 36.17,-187.15 36.17,-187.15 285.83,-187.15 285.83,-187.15 291.83,-187.15 297.83,-193.15 297.83,-199.15 297.83,-199.15 297.83,-219.55 297.83,-219.55 297.83,-225.55 291.83,-231.55 285.83,-231.55"/>
+<text xml:space="preserve" text-anchor="middle" x="161" y="-211.05" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">br&#45;ex + br&#45;int patch pairs</text>
+<text xml:space="preserve" text-anchor="middle" x="161" y="-196.05" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">Project flat provider network · 10.53.0.0/24</text>
 </g>
 <!-- pipeline&#45;&gt;provider -->
 <g id="edge3" class="edge">
 <title>pipeline&#45;&gt;provider</title>
-<path fill="none" stroke="#475569" stroke-width="1.4" d="M136.13,-282.75C136.79,-270.38 137.64,-254.59 138.37,-240.91"/>
-<polygon fill="#475569" stroke="#475569" stroke-width="1.4" points="140.81,-241.08 138.74,-233.96 135.92,-240.82 140.81,-241.08"/>
-<text xml:space="preserve" text-anchor="middle" x="175.67" y="-253.3" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#334155"> &#160;OVN forwarding</text>
+<path fill="none" stroke="#475569" stroke-width="1.4" d="M150.95,-282.75C152.68,-270.27 154.9,-254.28 156.81,-240.51"/>
+<polygon fill="#475569" stroke="#475569" stroke-width="1.4" points="159.19,-241.21 157.73,-233.94 154.34,-240.54 159.19,-241.21"/>
+<text xml:space="preserve" text-anchor="middle" x="193.15" y="-253.3" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#334155"> &#160;OVN forwarding</text>
 </g>
 <!-- nic -->
 <g id="node8" class="node">
 <title>nic</title>
-<path fill="#f0fdf4" stroke="#64748b" d="M169.95,-130.4C169.95,-130.4 110.05,-130.4 110.05,-130.4 104.05,-130.4 98.05,-124.4 98.05,-118.4 98.05,-118.4 98.05,-98 98.05,-98 98.05,-92 104.05,-86 110.05,-86 110.05,-86 169.95,-86 169.95,-86 175.95,-86 181.95,-92 181.95,-98 181.95,-98 181.95,-118.4 181.95,-118.4 181.95,-124.4 175.95,-130.4 169.95,-130.4"/>
-<text xml:space="preserve" text-anchor="middle" x="140" y="-109.9" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">Guest NIC</text>
-<text xml:space="preserve" text-anchor="middle" x="140" y="-94.9" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">10.53.0.22</text>
+<path fill="#f0fdf4" stroke="#64748b" d="M190.95,-130.4C190.95,-130.4 131.05,-130.4 131.05,-130.4 125.05,-130.4 119.05,-124.4 119.05,-118.4 119.05,-118.4 119.05,-98 119.05,-98 119.05,-92 125.05,-86 131.04,-86 131.04,-86 190.95,-86 190.95,-86 196.95,-86 202.95,-92 202.95,-98 202.95,-98 202.95,-118.4 202.95,-118.4 202.95,-124.4 196.95,-130.4 190.95,-130.4"/>
+<text xml:space="preserve" text-anchor="middle" x="161" y="-109.9" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">Guest NIC</text>
+<text xml:space="preserve" text-anchor="middle" x="161" y="-94.9" font-family="Helvetica,sans-Serif" font-size="14.00" fill="#172b4d">10.53.0.22</text>
 </g>
 <!-- provider&#45;&gt;nic -->
 <g id="edge4" class="edge">
 <title>provider&#45;&gt;nic</title>
-<path fill="none" stroke="#475569" stroke-width="1.4" d="M140,-186.84C140,-170.21 140,-147.29 140,-130.67"/>
-<text xml:space="preserve" text-anchor="middle" x="191.38" y="-157.65" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#334155"> &#160;br&#45;int → compute TAP</text>
+<path fill="none" stroke="#475569" stroke-width="1.4" d="M161,-186.84C161,-170.21 161,-147.29 161,-130.67"/>
+<text xml:space="preserve" text-anchor="middle" x="212.38" y="-157.65" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#334155"> &#160;br&#45;int → compute TAP</text>
 </g>
 </g>
 </svg>

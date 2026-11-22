@@ -6,9 +6,6 @@ metadata:
     lab: cilium-l3
 spec:
   advertisements:
-    - advertisementType: Interface
-      interface:
-        name: lo
     - advertisementType: Service
       service:
         addresses:
@@ -20,8 +17,9 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumBGPPeerConfig
 metadata:
-  name: node-frr
+  name: host-frr
 spec:
+  ebgpMultihop: 2
   timers:
     connectRetryTimeSeconds: 5
     holdTimeSeconds: 9
@@ -36,20 +34,28 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumBGPClusterConfig
 metadata:
-  name: node-frr
+  name: host-frr
 spec:
   nodeSelector:
     matchLabels:
       kubernetes.io/hostname: cilium-l3-node
   bgpInstances:
-    - name: node-frr
+    - name: host-frr
       localASN: 65201
       peers:
-        - name: node-frr
+        - name: host-frr
           peerASN: 65202
-          autoDiscovery:
-            mode: Unnumbered
-            unnumbered:
-              interface: cilium-uplink
+          peerAddress: 10.220.255.2
           peerConfigRef:
-            name: node-frr
+            name: host-frr
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPNodeConfigOverride
+metadata:
+  name: cilium-l3-node
+spec:
+  bgpInstances:
+    - name: host-frr
+      peers:
+        - name: host-frr
+          localAddress: 10.220.255.10

@@ -1,6 +1,6 @@
 # OpenStack OVN BGP Service Plugin
 
-Neutron 2026.2 の組み込み `ovn-bgp` service plugin と OVN Neutron Agent を使う。CirrOS VM は flat provider network に直接接続し、固定 IP `10.53.0.22/32` を両 ToR に広告する。Neutron ルーターと Floating IP の作成は不要。図の `bgp-lr-main` はプラグインが OVN 内に作成する論理ルーター。 [Neutron 2026.2 の provider network 実装](https://github.com/openstack/neutron/blob/b82b437de7/neutron/services/bgp/commands.py#L271-L305)
+Neutron 2026.2 の組み込み `ovn-bgp` service plugin と OVN Neutron Agent を使う。CirrOS VM は DevStack の `demo` プロジェクトが所有する非共有・内部の flat provider network に直接接続し、固定 IP `10.53.0.22/32` を両 ToR に広告する。Neutron ルーターと Floating IP の作成は不要。図の `bgp-lr-main` はプラグインが OVN 内に作成する論理ルーター。 [Neutron 2026.2 の provider network 実装](https://github.com/openstack/neutron/blob/b82b437de7/neutron/services/bgp/commands.py#L271-L305)
 
 ## 検証ネットワーク
 
@@ -25,19 +25,21 @@ sudo ./containerlab.sh deploy
 
 ## VM 固定 IP の検証
 
-空のラボで CirrOS イメージを Glance に登録してから実行する。
+空のラボで CirrOS イメージを `demo` プロジェクトが利用できるように Glance に登録する。管理者が `demo` 所有の flat provider network を作り、テナント権限でサブネット、ポート、VM を作る。ML2 の flat ドライバーでは、通常のプロジェクトネットワーク作成時には flat セグメントが自動割り当てされないため、作成時に provider 属性を指定する。 [ML2 flat ドライバーの実装](https://github.com/openstack/neutron/blob/b82b437de7/neutron/plugins/ml2/drivers/type_flat.py#L112-L114)
 
 ```bash
 source "$HOME/devstack-ovn-bgp/openrc" admin admin
 openstack extension list --network | grep ovn-bgp
-openstack network create --provider-physical-network public \
+openstack flavor create --vcpus 1 --ram 512 --disk 1 ovn-bgp-tiny
+openstack network create --project demo --internal --no-share \
+  --provider-physical-network public \
   --provider-network-type flat ovn-bgp-direct
+source "$HOME/devstack-ovn-bgp/openrc" demo demo
 openstack subnet create --network ovn-bgp-direct \
   --subnet-range 10.53.0.0/24 --gateway 10.53.0.1 ovn-bgp-direct-v4
 openstack security group create ovn-bgp-icmp
 openstack security group rule create --ingress --protocol icmp \
   --remote-ip 203.0.113.10/32 ovn-bgp-icmp
-openstack flavor create --vcpus 1 --ram 512 --disk 1 ovn-bgp-tiny
 openstack port create --network ovn-bgp-direct \
   --fixed-ip subnet=ovn-bgp-direct-v4,ip-address=10.53.0.22 \
   --security-group ovn-bgp-icmp ovn-bgp-vm-port
@@ -46,6 +48,8 @@ openstack server create --wait --image cirros-0.6.3-x86_64-disk \
 ```
 
 ```bash
+source "$HOME/devstack-ovn-bgp/openrc" admin admin
+openstack network show ovn-bgp-direct -c project_id -c provider:network_type -c router:external -c shared
 openstack router list
 openstack floating ip list
 sudo ovn-sbctl list Advertised_Route
@@ -61,10 +65,12 @@ sudo ./verify.sh failover
 ## 撤去
 
 ```bash
+source "$HOME/devstack-ovn-bgp/openrc" demo demo
 openstack server delete --wait ovn-bgp-vm
 sudo ./verify.sh withdrawn
 openstack network delete ovn-bgp-direct
 openstack security group delete ovn-bgp-icmp
+source "$HOME/devstack-ovn-bgp/openrc" admin admin
 openstack flavor delete ovn-bgp-tiny
 sudo ./containerlab.sh destroy
 ```

@@ -35,7 +35,7 @@ digraph ovn {
         <TR><TD COLSPAN="2" PORT="patch" BGCOLOR="#dbeafe">OVS localnet patch ports</TD></TR>
       </TABLE>>];
     pipeline [label="OVS br-int\nOVN BGP fabric · bgp-lr-main"];
-    provider [label="br-ex + br-int patch pairs\nFlat provider network · 10.53.0.0/24"];
+    provider [label="br-ex + br-int patch pairs\nProject flat provider network · 10.53.0.0/24"];
     routing [label="Chassis FRR · AS65231\nlo 203.0.113.31/32\nTable 42 exports VM /32\nTable 10 imports IPv4 default via IPv6"];
     subgraph cluster_guest {
       label="CirrOS VM"; labelloc=b; color="#94a3b8"; style=rounded;

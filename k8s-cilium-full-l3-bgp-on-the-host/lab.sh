@@ -22,12 +22,11 @@ flock 9
 
 node=cilium-l3-node
 node_ip=10.220.255.10
-node_frr=clab-cilium-l3-node-frr
-host_frr=clab-cilium-l3-kube-host-frr
+frr_ip=10.220.255.2
+host_frr=clab-cilium-l3-host-frr
 tors=(clab-cilium-l3-tor1 clab-cilium-l3-tor2)
 client=clab-cilium-l3-client
-uplink=cilium-uplink
-return_link=cilium-routes
+uplinks=(cilium-tor1 cilium-tor2)
 egress_vrf=cilium-egress
 egress_table=220
 cri=unix:///run/containerd-cilium-lab/containerd.sock
@@ -51,9 +50,11 @@ forward_rule() {
 }
 
 configure_forwarding() {
-  forward_rule "$1" -i "$uplink" -s "$client_network" -d "$pod_network" -j ACCEPT
-  forward_rule "$1" -i "$return_link" -s "$client_network" -d "$pod_network" -j ACCEPT
-  forward_rule "$1" -o "$return_link" -s "$pod_network" -d "$client_network" -j ACCEPT
+  local uplink
+  for uplink in "${uplinks[@]}"; do
+    forward_rule "$1" -i "$uplink" -s "$client_network" -d "$pod_network" -j ACCEPT
+    forward_rule "$1" -o "$uplink" -s "$pod_network" -d "$client_network" -j ACCEPT
+  done
 }
 
 setup_egress() {
@@ -64,17 +65,23 @@ setup_egress() {
 }
 
 configure_pod_routing() {
-  ip link set "$return_link" master "$egress_vrf"
-  ip link set "$return_link" up
-  sysctl -w "net.ipv6.conf.$return_link.disable_ipv6=0"
+  local uplink
+  for uplink in "${uplinks[@]}"; do
+    ip link set "$uplink" master "$egress_vrf"
+    ip link set "$uplink" up
+    sysctl -w "net.ipv6.conf.$uplink.disable_ipv6=0"
+  done
   if [[ -z $(ip -4 rule show pref 990) ]]; then
-    ip -4 rule add pref 990 iif "$egress_vrf" to "$pod_network" lookup main suppress_prefixlength 0
+    ip -4 rule add pref 990 to "$pod_network" lookup main suppress_prefixlength 0
   fi
   if [[ -z $(ip -4 rule show pref 22010) ]]; then
     ip -4 rule add pref 22010 from "$pod_network" lookup main suppress_prefixlength 0
   fi
   if [[ -z $(ip -4 rule show pref 22011) ]]; then
     ip -4 rule add pref 22011 from "$pod_network" lookup "$egress_table"
+  fi
+  if [[ -z $(ip -4 rule show pref 22007) ]]; then
+    ip -4 rule add pref 22007 from "$node_ip/32" lookup main suppress_prefixlength 0
   fi
   if [[ -z $(ip -4 rule show pref 22008) ]]; then
     ip -4 rule add pref 22008 from "$node_ip/32" lookup "$egress_table"
@@ -90,12 +97,12 @@ configure_pod_routing() {
 up() {
   if [[ ! -f $state/owned ]]; then
     if [[ -e /etc/kubernetes/admin.conf || -e /etc/kubernetes/manifests/kube-apiserver.yaml ]] ||
-       docker container inspect "$node_frr" >/dev/null 2>&1 ||
        docker container inspect "$host_frr" >/dev/null 2>&1 ||
        docker container inspect "${tors[0]}" >/dev/null 2>&1 ||
        docker container inspect "${tors[1]}" >/dev/null 2>&1 ||
        docker container inspect "$client" >/dev/null 2>&1 ||
-       ip link show "$uplink" >/dev/null 2>&1 ||
+       ip link show "${uplinks[0]}" >/dev/null 2>&1 ||
+       ip link show "${uplinks[1]}" >/dev/null 2>&1 ||
        ip link show "$egress_vrf" >/dev/null 2>&1; then
       echo 'An existing Kubernetes cluster or lab topology must be removed first.' >&2
       return 1
@@ -113,6 +120,7 @@ up() {
   modprobe vrf
   setup_egress
   ip address replace "$node_ip/32" dev lo
+  ip address replace "$frr_ip/32" dev lo
   sysctl -w net.ipv4.ip_forward=1
   install -D -m 0644 containerd.toml /etc/containerd/cilium-lab.toml
   install -m 0644 containerd-cilium-lab.service /etc/systemd/system/
@@ -128,10 +136,6 @@ up() {
     containerlab deploy --topo topology.clab.yml
     touch "$state/topology-ready"
   fi
-  ip link set "$uplink" up
-  sysctl -w "net.ipv6.conf.$uplink.disable_ipv6=0" \
-    "net.ipv6.conf.$uplink.accept_ra=2" \
-    "net.ipv6.conf.$uplink.accept_ra_defrtr=0"
   configure_pod_routing
   configure_forwarding add
 
@@ -175,6 +179,7 @@ EOF
     crd/ciliumbgpadvertisements.cilium.io
     crd/ciliumbgpclusterconfigs.cilium.io
     crd/ciliumbgppeerconfigs.cilium.io
+    crd/ciliumbgpnodeconfigoverrides.cilium.io
     crd/ciliumloadbalancerippools.cilium.io
   )
   kubectl -n kube-system rollout status deployment/cilium-operator --timeout=5m
@@ -218,10 +223,10 @@ wait_for_fabric() {
   shift 3
   local deadline=$((SECONDS + 90))
   until check_routes "$client_interfaces" docker exec "$client" ip -j -4 route show default &&
-        check_routes "$node_interfaces" docker exec "$node_frr" ip -j -4 route show exact "$client_network" &&
+        check_routes "$node_interfaces" ip -j -4 route show table "$egress_table" default &&
         check_tors "$pod_ip" "$@"; do
     if (( SECONDS >= deadline )); then
-      docker exec "$node_frr" vtysh -c 'show bgp ipv4 unicast summary'
+      docker exec "$host_frr" vtysh -c 'show bgp ipv4 unicast summary' -c "show bgp vrf $egress_vrf ipv4 unicast summary"
       return 1
     fi
     sleep 2
@@ -231,7 +236,7 @@ wait_for_fabric() {
 check_traffic() {
   local pod_ip=$1 pod_dev=$2
   ip -j -4 route get "$client_ip" from "$pod_ip" iif "$pod_dev" |
-    jq -e --arg dev "$return_link" 'any(.[]; .dev == $dev and .via.family == "inet6")' >/dev/null
+    jq -e 'any(.[]; .via.family == "inet6")' >/dev/null
   docker exec "$client" ping -c 2 -W 2 "$node_ip"
   docker exec "$client" ping -c 2 -W 2 "$pod_ip"
   docker exec "$client" wget -q -T 5 -O - "http://$vip/" | grep -Fx probe
@@ -255,14 +260,15 @@ verify() {
   pod_ip=$(kubectl -n lab-probe get pod probe -o 'jsonpath={.status.podIP}')
   pod_dev=$(ip -j -4 route show exact "$pod_ip/32" |
     jq -er '.[] | select(.protocol == "kernel") | .dev')
-  wait_for_fabric "$pod_ip" '["eth1","eth2"]' '["eth2","eth4"]' "${tors[@]}"
-  check_peers "$node_frr" '["eth1","eth2","eth3","eth4"]'
+  wait_for_fabric "$pod_ip" '["eth1","eth2"]' '["cilium-tor1","cilium-tor2"]' "${tors[@]}"
+  docker exec "$host_frr" vtysh -c 'show bgp ipv4 unicast summary json' |
+    jq -e --arg peer "$node_ip" '.peers[$peer].state == "Established" and .peers[$peer].remoteAs == 65201' >/dev/null
+  docker exec "$host_frr" vtysh -c "show bgp vrf $egress_vrf ipv4 unicast summary json" |
+    jq -e '.peers | keys == ["cilium-tor1","cilium-tor2"] and all(.[]; .state == "Established" and .idType == "interface")' >/dev/null
   check_peers "$client" '["eth1","eth2"]'
   for tor in "${tors[@]}"; do
     check_peers "$tor" '["eth1","eth2"]'
   done
-  check_routes '["cilium-routes"]' ip -j -4 route show table "$egress_table" default
-  check_routes '["eth3"]' docker exec "$node_frr" ip -j -4 route show exact "$pod_ip/32"
   check_traffic "$pod_ip" "$pod_dev"
 
   if [[ $failover == --failover ]]; then
@@ -272,13 +278,13 @@ verify() {
     for tor in "${tors[@]}"; do
       set_tor_links "$tor" down
       if [[ $tor == "${tors[0]}" ]]; then
-        wait_for_fabric "$pod_ip" '["eth2"]' '["eth4"]' "${tors[1]}"
+        wait_for_fabric "$pod_ip" '["eth2"]' '["cilium-tor2"]' "${tors[1]}"
       else
-        wait_for_fabric "$pod_ip" '["eth1"]' '["eth2"]' "${tors[0]}"
+        wait_for_fabric "$pod_ip" '["eth1"]' '["cilium-tor1"]' "${tors[0]}"
       fi
       check_traffic "$pod_ip" "$pod_dev"
       set_tor_links "$tor" up
-      wait_for_fabric "$pod_ip" '["eth1","eth2"]' '["eth2","eth4"]' "${tors[@]}"
+      wait_for_fabric "$pod_ip" '["eth1","eth2"]' '["cilium-tor1","cilium-tor2"]' "${tors[@]}"
     done
     trap - EXIT INT TERM
     check_traffic "$pod_ip" "$pod_dev"
@@ -294,9 +300,10 @@ down() {
     rm -f "$state/kubeadm-started" "$state/kubeadm-ready"
   fi
   configure_forwarding remove
-  ip -4 rule del pref 990 iif "$egress_vrf" to "$pod_network" lookup main suppress_prefixlength 0 2>/dev/null || true
+  ip -4 rule del pref 990 to "$pod_network" lookup main suppress_prefixlength 0 2>/dev/null || true
   ip -4 rule del pref 22009 from "$node_ip/32" unreachable 2>/dev/null || true
   ip -4 rule del pref 22008 from "$node_ip/32" lookup "$egress_table" 2>/dev/null || true
+  ip -4 rule del pref 22007 from "$node_ip/32" lookup main suppress_prefixlength 0 2>/dev/null || true
   ip -4 rule del pref 22012 from "$pod_network" unreachable 2>/dev/null || true
   ip -4 rule del pref 22011 from "$pod_network" lookup "$egress_table" 2>/dev/null || true
   ip -4 rule del pref 22010 from "$pod_network" lookup main suppress_prefixlength 0 2>/dev/null || true
@@ -313,6 +320,7 @@ down() {
     rm -f /etc/systemd/system/containerd-cilium-lab.service /etc/containerd/cilium-lab.toml
     systemctl daemon-reload
   fi
+  ip address del "$frr_ip/32" dev lo 2>/dev/null || true
   ip address del "$node_ip/32" dev lo 2>/dev/null || true
   rm -f "$state/owned" "$state/init.yaml"
 }

@@ -1,12 +1,12 @@
 # Infra Lab
 
-node3 上の検証専用 Linux VM で、Containerlab を使って IPv4 経路を交換する。各ラボは Dual ToR 構成で、検証対象ホストは独立した2本の L3 インターフェースを使う。ノード IP はループバックに /32 で割り当てる。BGP ピアはすべてインターフェース指定の Unnumbered とし、IPv6 link-local を自動検出する。
+node3 上の検証専用 Linux VM で、Containerlab を使って IPv4 経路を交換する。各ラボは Dual ToR 構成で、検証対象ホストは独立した2本の L3 インターフェースを使う。ノード IP はループバックに /32 で割り当てる。ToR に接続する BGP ピアはインターフェース指定の Unnumbered とし、IPv6 link-local を自動検出する。Kubernetes ラボのホスト内セッションはループバック上の numbered eBGP を使う。
 
 | ディレクトリ | 検証内容 |
 | --- | --- |
 | [common](common/) | Linux VM の前提、Docker、Containerlab、共通 FRR 設定 |
 | [Full L3 IP Clos](full-l3-ip-clos/) | 2 spine / 2 ToR、ノード /32、デフォルトの ECMP と片系断 |
-| [OpenStack OVN BGP Service Plugin](openstack-ovn-bgp-service-plugin/) | Neutron ルーターなしの flat provider network、VM 固定 IP /32 の広告・撤回 |
+| [OpenStack OVN BGP Service Plugin](openstack-ovn-bgp-service-plugin/) | テナント所有の flat provider network、VM 固定 IP /32 の広告・撤回 |
 | [Kubernetes Cilium Full L3 BGP on the Host](k8s-cilium-full-l3-bgp-on-the-host/) | kubeadm 単一ノード、Pod IP 個別 /32・ノード IP・LoadBalancer VIP の広告 |
 
 [共通セットアップ](common/README.md)を実行してから、各ラボの README に従う。各ラボの管理ネットワークとデータリンクは固有の名前とアドレスを使う。データリンクは検証専用 VM 内に閉じる。
@@ -38,7 +38,7 @@ node3 に libvirt の検証専用 VM を2台作成し、Containerlab で3つの 
 | ラボ | 検証結果 |
 | --- | --- |
 | Full L3 IP Clos | **合格**。8本の Unnumbered セッション、両ホストの IPv4 デフォルトと両 spine のノード /32 の ECMP を確認した。両方の片系断で経路は残る ToR に収束し、ホスト間の双方向 ping に成功した。 |
-| OpenStack OVN BGP Service Plugin | **合格**。Neutron ルーターも Floating IP も存在しない状態で、CirrOS の固定 IP `10.53.0.22/32` を両 ToR で学習した。両方の片系断で chassis のループバックと VM 固定 IP への ping に成功した。VM 削除で /32 が撤回され、再作成で再広告された。 |
-| Kubernetes Cilium Full L3 BGP on the Host | **合格**。6本の Unnumbered セッションで、ノード IP・個別 Pod /32・VIP を両 ToR で学習した。両方の片系断でノードと Pod への ping、VIP への HTTP に成功した。一時 Pod の作成・削除でその /32 の広告・撤回を確認した。 |
+| OpenStack OVN BGP Service Plugin | **合格**。`demo` 所有の内部 flat ネットワークで、CirrOS の固定 IP `10.53.0.22/32` を両 ToR で学習した。両方の片系断で chassis のループバックと VM 固定 IP への ping に成功した。VM 削除で /32 が撤回され、再作成で再広告された。 |
+| Kubernetes Cilium Full L3 BGP on the Host | **合格**。4本の Unnumbered セッションとホスト内の numbered eBGP で、ノード IP・個別 Pod /32・VIP を両 ToR で学習した。両方の片系断でノードと Pod への ping、VIP への HTTP に成功した。一時 Pod の作成・削除でその /32 の広告・撤回を確認し、Cilium の広告設定を外すと VIP も両 ToR から撤回されることを確認した。 |
 
 両 VM の稼働中に、node3 の利用可能メモリは **約5.0 GiB**、スワップ入出力カウンターはどちらも **0** だった。既存の CAPI VM は計測時に停止していた。物理構成と VM 管理手順は [共通セットアップ](common/README.md#物理ホストと-vm-の配置)、各ラボの論理構成は冒頭のディレクトリ一覧を参照。
