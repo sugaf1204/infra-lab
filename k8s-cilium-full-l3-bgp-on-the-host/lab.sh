@@ -2,80 +2,110 @@
 set -euo pipefail
 
 if [[ "$(uname -s)" != Linux || "$EUID" != 0 ]]; then
-  echo 'Run this lab as root on the Linux lab host.' >&2
+  echo 'Run this lab as root on the dedicated Linux VM.' >&2
   exit 1
 fi
 
-action="${1:-}"
+action=${1:-}
 case "$action" in
   up|verify|down) ;;
-  *)
-    echo "Usage: $0 {up|verify|down}" >&2
-    exit 2 ;;
+  *) echo "Usage: $0 {up|verify|down}" >&2; exit 2 ;;
 esac
-
-for cmd in docker kind containerlab flock kubectl; do
-  command -v "$cmd" >/dev/null || { echo "Missing command: $cmd" >&2; exit 1; }
-done
-if [[ "$action" == up ]] && ! command -v helm >/dev/null; then
-  echo 'Missing command: helm' >&2
-  exit 1
-fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 umask 077
-mkdir -p .lab-state
-exec 9>.lab-state/lock
+state=.lab-state/kubeadm
+mkdir -p "$state"
+exec 9>"$state/lock"
 flock 9
 
-cluster=cilium-l3
-control=$cluster-control-plane
-worker=$cluster-worker
-tor1=clab-$cluster-tor1
-tor2=clab-$cluster-tor2
-client=clab-$cluster-client
-export KUBECONFIG="$PWD/.lab-state/kubeconfig"
-export KIND_EXPERIMENTAL_PROVIDER=docker CLAB_RUNTIME=docker
-export DOCKER_HOST=unix:///var/run/docker.sock
+node=cilium-l3-node
+tor=clab-cilium-l3-tor1
+client=clab-cilium-l3-client
+uplink=cilium-uplink
+cri=unix:///run/containerd-cilium-lab/containerd.sock
+vip=10.220.250.10
+pod_network=10.220.0.0/20
+client_network=10.220.240.12/30
+
+export KUBECONFIG=/etc/kubernetes/admin.conf
+export CLAB_RUNTIME=docker DOCKER_HOST=unix:///var/run/docker.sock
 unset DOCKER_CONTEXT
 
-configure_node() {
-  local node=$1 address=$2 gateway=$3
-  docker exec "$node" ip -4 addr replace "$address" dev eth1
-  docker exec "$node" ip -4 route replace 10.220.0.0/20 via "$gateway" dev eth1
-  docker exec "$node" ip -4 route replace 10.220.240.12/30 via "$gateway" dev eth1
+forward_rule() {
+  local operation=$1
+  shift
+  if [[ $operation == add ]]; then
+    iptables -C DOCKER-USER "$@" 2>/dev/null || iptables -I DOCKER-USER 1 "$@"
+  elif iptables -C DOCKER-USER "$@" 2>/dev/null; then
+    iptables -D DOCKER-USER "$@"
+  fi
+}
+
+configure_forwarding() {
+  forward_rule "$1" -i "$uplink" -s "$client_network" -d "$pod_network" -j ACCEPT
+  forward_rule "$1" -o "$uplink" -s "$pod_network" -d "$client_network" -j ACCEPT
 }
 
 up() {
-  if [[ ! -f .lab-state/owned ]]; then
-    local clusters
-    clusters=$(kind get clusters)
-    if grep -Fxq "$cluster" <<<"$clusters" ||
-       docker container inspect "$tor1" >/dev/null 2>&1 ||
-       docker container inspect "$tor2" >/dev/null 2>&1 ||
-       docker container inspect "$client" >/dev/null 2>&1; then
-      echo "An existing cluster or topology uses the $cluster name." >&2
+  if [[ ! -f $state/owned ]]; then
+    if [[ -e /etc/kubernetes/admin.conf || -e /etc/kubernetes/manifests/kube-apiserver.yaml ]] ||
+       docker container inspect "$tor" >/dev/null 2>&1 ||
+       docker container inspect "$client" >/dev/null 2>&1 ||
+       ip link show "$uplink" >/dev/null 2>&1; then
+      echo 'An existing Kubernetes cluster or lab topology must be removed first.' >&2
       return 1
     fi
-    touch .lab-state/owned
-  fi
-  if [[ ! -s "$KUBECONFIG" ]]; then
-    kind create cluster --name "$cluster" --config kind.yaml --kubeconfig "$KUBECONFIG" \
-      --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+    touch "$state/owned"
   fi
 
-  if [[ ! -f .lab-state/topology-ready ]]; then
-    if [[ -f .lab-state/topology-started ]]; then
+  if [[ $(wc -l < /proc/swaps) -gt 1 ]]; then
+    echo 'This lab requires a VM with swap disabled.' >&2
+    return 1
+  fi
+
+  modprobe overlay
+  modprobe br_netfilter
+  sysctl -w net.ipv4.ip_forward=1
+  install -D -m 0644 containerd.toml /etc/containerd/cilium-lab.toml
+  install -m 0644 containerd-cilium-lab.service /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl enable --now containerd-cilium-lab.service kubelet.service
+
+  if [[ ! -f $state/topology-ready ]]; then
+    if [[ -f $state/topology-started ]]; then
       echo "Earlier topology deployment was incomplete. Run '$0 down' before retrying." >&2
       return 1
     fi
-    touch .lab-state/topology-started
+    touch "$state/topology-started"
     containerlab deploy --topo topology.clab.yml
-    touch .lab-state/topology-ready
+    touch "$state/topology-ready"
   fi
-  configure_node "$control" 10.220.240.2/30 10.220.240.1
-  configure_node "$worker" 10.220.240.6/30 10.220.240.5
+  ip link set "$uplink" up
+  ip -4 addr replace 10.220.240.2/30 dev "$uplink"
+  ip -4 route replace "$client_network" via 10.220.240.1 dev "$uplink"
+  configure_forwarding add
 
+  if [[ ! -f $state/kubeadm-ready ]]; then
+    if [[ -f $state/kubeadm-started ]]; then
+      echo "Earlier kubeadm initialization was incomplete. Run '$0 down' before retrying." >&2
+      return 1
+    fi
+    local management_ip
+    management_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i=1; i<NF; i++) if ($i=="src") {print $(i+1); exit}}')
+    [[ -n $management_ip ]]
+    touch "$state/kubeadm-started"
+    kubeadm init --node-name "$node" --cri-socket "$cri" \
+      --apiserver-advertise-address "$management_ip" \
+      --kubernetes-version "$(kubeadm version -o short)" \
+      --pod-network-cidr "$pod_network" --service-cidr 10.221.0.0/16
+    touch "$state/kubeadm-ready"
+  fi
+
+  if kubectl get node "$node" -o json |
+    jq -e 'any(.spec.taints[]?; .key == "node-role.kubernetes.io/control-plane" and .effect == "NoSchedule")' >/dev/null; then
+    kubectl taint node "$node" node-role.kubernetes.io/control-plane:NoSchedule-
+  fi
   helm upgrade --install cilium oci://quay.io/cilium/charts/cilium \
     --version 1.18.17 --namespace kube-system --values cilium-values.yaml --wait --timeout 10m
   local crds=(
@@ -91,48 +121,49 @@ up() {
 }
 
 verify() {
-  local control_pod worker_pod control_cidr worker_cidr vip=10.220.250.10
-  kubectl -n lab-probe wait --for=condition=Ready --timeout=180s pod/probe-control pod/probe-worker
+  local pod_ip pod_cidr deadline
+  kubectl wait --for=condition=Ready --timeout=180s "node/$node"
+  kubectl -n lab-probe wait --for=condition=Ready --timeout=180s pod/probe
   kubectl -n lab-probe wait --timeout=120s \
-    --for="jsonpath={.status.loadBalancer.ingress[0].ip}=$vip" service/probe-worker
-  control_pod=$(kubectl -n lab-probe get pod probe-control -o 'jsonpath={.status.podIP}')
-  worker_pod=$(kubectl -n lab-probe get pod probe-worker -o 'jsonpath={.status.podIP}')
-  control_cidr=$(kubectl get node "$control" -o 'jsonpath={.spec.podCIDR}')
-  worker_cidr=$(kubectl get node "$worker" -o 'jsonpath={.spec.podCIDR}')
-  local deadline=$((SECONDS + 90))
-  until docker exec "$tor1" ip -4 route show exact "$control_cidr" | grep -F 'via 10.220.240.2 dev eth1' >/dev/null &&
-        docker exec "$tor1" ip -4 route show exact "$worker_cidr" | grep -F 'via 10.220.240.10 dev eth2' >/dev/null &&
-        docker exec "$tor2" ip -4 route show exact "$worker_cidr" | grep -F 'via 10.220.240.6 dev eth1' >/dev/null &&
-        docker exec "$tor2" ip -4 route show exact "$control_cidr" | grep -F 'via 10.220.240.9 dev eth2' >/dev/null &&
-        docker exec "$tor1" ip -4 route show exact "$vip/32" | grep -F 'via 10.220.240.10 dev eth2' >/dev/null &&
-        docker exec "$tor2" ip -4 route show exact "$vip/32" | grep -F 'via 10.220.240.6 dev eth1' >/dev/null; do
+    --for="jsonpath={.status.loadBalancer.ingress[0].ip}=$vip" service/probe
+  pod_ip=$(kubectl -n lab-probe get pod probe -o 'jsonpath={.status.podIP}')
+  pod_cidr=$(kubectl get node "$node" -o 'jsonpath={.spec.podCIDR}')
+
+  deadline=$((SECONDS + 90))
+  until docker exec "$tor" ip -4 route show exact "$pod_cidr" | grep -F 'via 10.220.240.2 dev eth1' >/dev/null &&
+        docker exec "$tor" ip -4 route show exact "$vip/32" | grep -F 'via 10.220.240.2 dev eth1' >/dev/null; do
     if (( SECONDS >= deadline )); then
-      docker exec "$tor1" vtysh -c 'show bgp ipv4 unicast summary'
-      docker exec "$tor2" vtysh -c 'show bgp ipv4 unicast summary'
+      docker exec "$tor" vtysh -c 'show bgp ipv4 unicast summary'
       return 1
     fi
     sleep 2
   done
 
-  docker exec "$control" ip -4 route get "$worker_pod" | grep -F 'via 10.220.240.1 dev eth1'
-  docker exec "$worker" ip -4 route get "$control_pod" | grep -F 'via 10.220.240.5 dev eth1'
-  kubectl -n lab-probe exec probe-control -- ping -c 2 -W 2 "$worker_pod"
-  kubectl -n lab-probe exec probe-worker -- ping -c 2 -W 2 "$control_pod"
-  docker exec "$client" ping -c 2 -W 2 "$control_pod"
-  docker exec "$client" ping -c 2 -W 2 "$worker_pod"
-  docker exec "$client" wget -q -T 5 -O - "http://$vip/" | grep -Fx 'probe-worker'
+  ip -4 route get 10.220.240.14 | grep -F "via 10.220.240.1 dev $uplink"
+  docker exec "$client" ping -c 2 -W 2 "$pod_ip"
+  docker exec "$client" wget -q -T 5 -O - "http://$vip/" | grep -Fx probe
 }
 
 down() {
-  if [[ ! -f .lab-state/owned ]]; then
-    return
+  [[ -f $state/owned ]] || return 0
+  if [[ -f $state/kubeadm-started ]]; then
+    systemctl start containerd-cilium-lab.service
+    kubeadm reset -f --cri-socket "$cri"
+    rm -f /etc/cni/net.d/05-cilium.conflist
+    rm -f "$state/kubeadm-started" "$state/kubeadm-ready"
   fi
-  if [[ -f .lab-state/topology-started ]]; then
+  configure_forwarding remove
+  if [[ -f $state/topology-started ]]; then
     containerlab destroy --topo topology.clab.yml --cleanup
-    rm -f .lab-state/topology-started .lab-state/topology-ready
+    rm -f "$state/topology-started" "$state/topology-ready"
   fi
-  kind delete cluster --name "$cluster" --kubeconfig "$KUBECONFIG"
-  rm -f "$KUBECONFIG" .lab-state/owned
+  systemctl disable --now kubelet.service
+  if [[ -f /etc/systemd/system/containerd-cilium-lab.service ]]; then
+    systemctl disable --now containerd-cilium-lab.service
+    rm -f /etc/systemd/system/containerd-cilium-lab.service /etc/containerd/cilium-lab.toml
+    systemctl daemon-reload
+  fi
+  rm -f "$state/owned"
 }
 
 "$action"

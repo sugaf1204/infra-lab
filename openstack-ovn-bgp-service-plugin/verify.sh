@@ -8,7 +8,7 @@ esac
 
 spine=clab-ovn-bgp-spine
 leaf=clab-ovn-bgp-leaf
-fip=198.51.100.100
+fixed_ip=10.53.0.22
 probe=203.0.113.10
 
 check_routes() {
@@ -16,9 +16,9 @@ check_routes() {
   summary=$(docker exec "$leaf" vtysh -c 'show bgp ipv4 unicast summary json') || return 1
   jq -e '[.peers[]? | .state == "Established"] == [true, true]' <<< "$summary" >/dev/null || return 1
 
-  bgp=$(docker exec "$spine" vtysh -c "show bgp ipv4 unicast $fip/32 json") || return 1
-  fib=$(docker exec "$spine" ip -j -4 route show exact "$fip/32") || return 1
-  vrf=$(ip -j -4 route show table 42 exact "$fip/32") || return 1
+  bgp=$(docker exec "$spine" vtysh -c "show bgp ipv4 unicast $fixed_ip/32 json") || return 1
+  fib=$(docker exec "$spine" ip -j -4 route show exact "$fixed_ip/32") || return 1
+  vrf=$(ip -j -4 route show table 42 exact "$fixed_ip/32") || return 1
 
   case "$check" in
     advertised|reachable)
@@ -37,15 +37,15 @@ check_routes() {
 for ((attempt = 0; attempt < 30; attempt++)); do
   if check_routes; then
     if [[ $check == reachable ]]; then
-      docker exec "$spine" ping -I "$probe" -c 3 -W 2 "$fip"
+      docker exec "$spine" ping -I "$probe" -c 3 -W 2 "$fixed_ip"
     fi
-    printf 'Floating IP %s/32 %s\n' "$fip" "$check"
+    printf 'Tenant fixed IP %s/32 %s\n' "$fixed_ip" "$check"
     exit 0
   fi
   sleep 2
 done
 
 docker exec "$leaf" vtysh -c 'show bgp ipv4 unicast summary' >&2
-docker exec "$spine" vtysh -c "show bgp ipv4 unicast $fip/32" >&2
-printf 'Floating IP %s/32 did not become %s\n' "$fip" "$check" >&2
+docker exec "$spine" vtysh -c "show bgp ipv4 unicast $fixed_ip/32" >&2
+printf 'Tenant fixed IP %s/32 did not become %s\n' "$fixed_ip" "$check" >&2
 exit 1

@@ -38,7 +38,7 @@ metadata:
 spec:
   nodeSelector:
     matchLabels:
-      kubernetes.io/hostname: cilium-l3-control-plane
+      kubernetes.io/hostname: cilium-l3-node
   bgpInstances:
     - name: tor1
       localASN: 65201
@@ -46,23 +46,5 @@ spec:
         - name: tor1
           peerASN: 65101
           peerAddress: 10.220.240.1
-          peerConfigRef:
-            name: tor
----
-apiVersion: cilium.io/v2
-kind: CiliumBGPClusterConfig
-metadata:
-  name: tor2
-spec:
-  nodeSelector:
-    matchLabels:
-      kubernetes.io/hostname: cilium-l3-worker
-  bgpInstances:
-    - name: tor2
-      localASN: 65202
-      peers:
-        - name: tor2
-          peerASN: 65102
-          peerAddress: 10.220.240.5
           peerConfigRef:
             name: tor

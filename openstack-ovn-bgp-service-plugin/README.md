@@ -1,32 +1,31 @@
 # OpenStack OVN BGP Service Plugin
 
-Neutron 2026.2 の組み込み `ovn-bgp` service plugin と OVN Neutron Agent の `ovn-bgp` 拡張を有効にし、別のルーティングドメインから Floating IP への疎通と経路撤回を確認する。OVN が Linux VRF のテーブル 42 に置いた経路を chassis の FRR が取得し、leaf、spine の順に eBGP で伝える。leaf から受信するデフォルト経路はテーブル 10 に入れ、OVN の戻り経路に使う。
+Neutron 2026.2 の組み込み `ovn-bgp` service plugin と OVN Neutron Agent の `ovn-bgp` 拡張を有効にし、spine から CirrOS VM の固定 IP へ直接到達できるか、テナントのホスト経路を広告・撤回して検証する。Floating IP は割り当てない。OVN が Linux VRF のテーブル 42 に置いた経路を chassis の FRR が取得し、leaf、spine の順に eBGP で伝える。leaf から受信するデフォルト経路はテーブル 10 に入れ、OVN の戻り経路に使う。
 
 ## 論理構成
 
 ```mermaid
 flowchart TB
-    subgraph ROUTES["経路広告"]
-        VRF["OVN テーブル 42"]
-        FRR["chassis FRR · AS65231"]
-        LEAF["leaf · AS65232"]
-        SPINE["spine · AS65233"]
-        VRF -->|"198.51.100.100/32"| FRR
-        FRR -->|"eBGP unnumbered"| LEAF
-        LEAF -->|"eBGP · 192.0.2.0/31"| SPINE
-    end
-    subgraph DATA["疎通試験"]
-        SRC["spine · 送信元 203.0.113.10"]
-        UPLINK["leaf → ovnbgp-uplink → br-bgp-0"]
-        MAIN["OVN · bgp-lr-main"]
-        DROP["bgp-lr-main-dead-lrp"]
-        ROUTER["Neutron router · Floating IP 198.51.100.100"]
-        VM["CirrOS"]
-        SRC -->|"ICMP"| UPLINK
-        UPLINK --> MAIN
-        MAIN -->|"ovn-trace で選択"| DROP
-        MAIN -.->|"転送未達"| ROUTER
-        ROUTER ---|"Geneve tenant network"| VM
+    subgraph HOST["node3 内の libvirt VM · infra-lab-openstack"]
+        subgraph CLAB["Containerlab コンテナ"]
+            SPINE["spine · AS65233<br/>検証元 203.0.113.10"]
+            LEAF["leaf · AS65232"]
+            SPINE ---|"eBGP · 192.0.2.0/31"| LEAF
+        end
+        subgraph CHASSIS["OpenStack chassis"]
+            FRR["chassis FRR · AS65231"]
+            UPLINK["OVS br-bgp-0"]
+            VRF["Linux VRF · テーブル 42"]
+            ROUTER["bgp-lr-main / テナント Geneve ネットワーク"]
+            VRF -->|"固定 IP 10.53.0.22/32"| FRR
+            UPLINK --> ROUTER
+        end
+        subgraph GUEST["Nova が起動する CirrOS VM"]
+            VNIC["テナント NIC · 10.53.0.22"]
+        end
+        LEAF ---|"veth · ovnbgp-uplink"| UPLINK
+        FRR -.->|"eBGP unnumbered · /32 広告"| LEAF
+        ROUTER -->|"OVS / TAP · 固定 IP 宛の検証経路"| VNIC
     end
 ```
 
@@ -58,7 +57,7 @@ sudo install -o frr -g frr -m 640 frr/chassis.conf /etc/frr/frr.conf
 sudo systemctl restart frr
 ```
 
-## Floating IP の検証
+## テナント固定 IP の検証
 
 専用 VM で DevStack の `openrc` を読み込む。以下のコマンドは空のラボにリソースを作成する。
 
@@ -78,21 +77,21 @@ openstack subnet create --network ovn-bgp-tenant \
   --subnet-range 10.53.0.0/24 ovn-bgp-tenant-v4
 openstack router create ovn-bgp-router
 openstack router add subnet ovn-bgp-router ovn-bgp-tenant-v4
-openstack router set --external-gateway ovn-bgp-public ovn-bgp-router
+openstack router set --external-gateway ovn-bgp-public --disable-snat ovn-bgp-router
 
 openstack security group create ovn-bgp-icmp
 openstack security group rule create --ingress --protocol icmp \
   --remote-ip 203.0.113.10/32 ovn-bgp-icmp
 openstack flavor create --vcpus 1 --ram 512 --disk 1 ovn-bgp-tiny
+openstack port create --network ovn-bgp-tenant \
+  --fixed-ip subnet=ovn-bgp-tenant-v4,ip-address=10.53.0.22 \
+  --security-group ovn-bgp-icmp ovn-bgp-vm-port
 openstack server create --wait --image cirros-0.6.3-x86_64-disk \
-  --flavor ovn-bgp-tiny --network ovn-bgp-tenant \
-  --security-group ovn-bgp-icmp ovn-bgp-vm
-
-openstack floating ip create --floating-ip-address 198.51.100.100 ovn-bgp-public
-openstack server add floating ip ovn-bgp-vm 198.51.100.100
+  --flavor ovn-bgp-tiny --port ovn-bgp-vm-port ovn-bgp-vm
+openstack subnet set --leak-routes ovn-bgp-tenant-v4
 ```
 
-VM が起動したら、OVN、BGP、疎通を順に確認する。
+Route leaking の有効化には、Geneve サブネットが外部ゲートウェイ付きの Neutron ルーターに接続されている必要がある。外部ゲートウェイはこの前提を満たすために作成する。FRR はテナント範囲の /32 だけをファブリックに広告する。
 
 ```bash
 sudo ovn-nbctl lr-list
@@ -104,25 +103,27 @@ sudo ./verify.sh advertised
 sudo ./verify.sh reachable
 ```
 
-`bgp-lr-main` と chassis 用 logical router が存在し、テーブル 42 と spine に `198.51.100.100/32` が現れる。`advertised` はテーブル 42、spine の BGP RIB と Linux FIB を照合する。テーブル 10 では leaf からのデフォルト経路を確認できる。`reachable` は spine のループバックを送信元にした ping が CirrOS まで往復すれば合格。
+`advertised` は固定 IP `10.53.0.22/32` をテーブル 42、spine の BGP RIB と Linux FIB で照合する。`reachable` は spine から CirrOS の固定 IP に直接 ping する。テーブル 10 では leaf からのデフォルト経路を確認できる。
 
-node3 の単一 chassis 構成では、FIP の BGP 広告・撤回・再広告を確認済み。実パケットは `ovnbgp-uplink` に到着したが、CirrOS の TAP には届かなかった。`ovn-trace` では `bgp-lr-main` が FIP 宛てに `bgp-lr-main-dead-lrp` を選んだ。疎通試験はこの転送上の問題を再現する。
-
-Floating IP を削除し、leaf の両 BGP セッションが Established の状態で spine から該当経路が消えることを確認する。
+Route leaking を無効化して広告を撤回し、再び有効化して再広告を確認する。CirrOS と固定 IP は保持する。
 
 ```bash
-openstack floating ip delete 198.51.100.100
+openstack subnet set --no-leak-routes ovn-bgp-tenant-v4
 sudo ./verify.sh withdrawn
+openstack subnet set --leak-routes ovn-bgp-tenant-v4
+sudo ./verify.sh advertised
 ```
 
 ## 片付けと切り戻し
 
-OpenStack を保持する場合は、専用 VM 内で次の順でリソースを片付ける。Floating IP が残っている場合は先に削除する。
+OpenStack を保持する場合は、専用 VM 内で次の順でリソースを片付ける。
 
 ```bash
+openstack subnet set --no-leak-routes ovn-bgp-tenant-v4
 openstack server delete --wait ovn-bgp-vm
-openstack router unset --external-gateway ovn-bgp-router
+openstack port delete ovn-bgp-vm-port
 openstack router remove subnet ovn-bgp-router ovn-bgp-tenant-v4
+openstack router unset --external-gateway ovn-bgp-router
 openstack router delete ovn-bgp-router
 openstack network delete ovn-bgp-tenant
 openstack network delete ovn-bgp-public

@@ -4,19 +4,23 @@ set -euo pipefail
 workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
 cd "$workdir"
+repository=https://pkgs.k8s.io/core:/stable:/v1.34/deb
 
-curl -fSLO https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64
-curl -fSLO https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64.sha256sum
-sha256sum --check kind-linux-amd64.sha256sum
-
-curl -fSLO https://dl.k8s.io/release/v1.34.0/bin/linux/amd64/kubectl
-curl -fSLO https://dl.k8s.io/release/v1.34.0/bin/linux/amd64/kubectl.sha256
-printf '%s  kubectl\n' "$(cat kubectl.sha256)" | sha256sum --check -
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gpg containerd conntrack
+curl -fsSLo Release.key "$repository/Release.key"
+gpg --batch --dearmor --output kubernetes-apt-keyring.gpg Release.key
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo install -m 0644 kubernetes-apt-keyring.gpg /etc/apt/keyrings/cilium-lab-kubernetes.gpg
+printf 'deb [signed-by=/etc/apt/keyrings/cilium-lab-kubernetes.gpg] %s/ /\n' "$repository" |
+  sudo tee /etc/apt/sources.list.d/cilium-lab-kubernetes.list >/dev/null
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
 
 curl -fSLO https://get.helm.sh/helm-v3.19.5-linux-amd64.tar.gz
 curl -fSLO https://get.helm.sh/helm-v3.19.5-linux-amd64.tar.gz.sha256sum
 printf '%s  helm-v3.19.5-linux-amd64.tar.gz\n' \
   "$(awk '{print $1}' helm-v3.19.5-linux-amd64.tar.gz.sha256sum)" | sha256sum --check -
 tar -xzf helm-v3.19.5-linux-amd64.tar.gz
-sudo install -m 0755 kind-linux-amd64 /usr/local/bin/kind
-sudo install -m 0755 kubectl linux-amd64/helm /usr/local/bin/
+sudo install -m 0755 linux-amd64/helm /usr/local/bin/helm

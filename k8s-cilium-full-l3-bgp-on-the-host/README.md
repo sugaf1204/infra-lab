@@ -1,43 +1,47 @@
 # Kubernetes Cilium Full L3 BGP on the Host
 
-kind の各 Kubernetes ノードで Cilium の BGP speaker を動かし、ノード固有の PodCIDR を隣接する FRR ToR に eBGP で広告する。ToR 間は独立したルーテッドリンクで接続する。Pod 間と外部クライアントから Pod IP への通信を IPv4 native routing で検証する。LoadBalancer Service の VIP は、backend が Ready な worker からだけ広告し、外部から HTTP で応答を確認する。
+node3 の `infra-lab-fabric` VM を kubeadm で構築する単一 Kubernetes ノードとして使う。コントロールプレーンと Pod はこの VM 内で動く。Cilium はホストで FRR ToR に eBGP 接続し、Pod CIDR と LoadBalancer VIP を広告する。
 
-## 論理構成
+## 物理・論理構成
 
 ```mermaid
 flowchart TB
-    T1["ToR1 · AS65101"]
-    T2["ToR2 · AS65102"]
-    N1["kind control-plane · AS65201"]
-    N2["kind worker · AS65202<br/>LB VIP 10.220.250.10"]
-    P1["control-plane 上の Pod"]
-    P2["worker 上の Pod"]
-    CLIENT["外部クライアント · 10.220.240.14"]
-    T1 ---|"eBGP · 10.220.240.8/30"| T2
-    T1 ---|"eBGP · 10.220.240.0/30 · eth1"| N1
-    T2 ---|"eBGP · 10.220.240.4/30 · eth1"| N2
-    T1 ---|"10.220.240.12/30"| CLIENT
-    N1 --- P1
-    N2 --- P2
+    subgraph HOST["物理ホスト · node3"]
+        NAT["libvirt default NAT · 管理ネットワーク"]
+        subgraph FABRIC["libvirt VM · infra-lab-fabric"]
+            subgraph CLAB["Containerlab コンテナ"]
+                CLIENT["外部クライアント · 10.220.240.14"]
+                TOR["ToR1 · FRR · AS65101"]
+                CLIENT ---|"10.220.240.12/30"| TOR
+            end
+            subgraph NODE["VM ホスト上の Kubernetes ノード · cilium-l3-node"]
+                MGMT["管理 NIC · Kubernetes API / kubelet"]
+                UPLINK["cilium-uplink · 10.220.240.2 · AS65201"]
+                POD["検証 Pod · Cilium native routing"]
+                UPLINK ---|"Pod CIDR / LoadBalancer VIP"| POD
+            end
+            TOR ---|"veth · eBGP · 10.220.240.0/30"| UPLINK
+        end
+        NAT --- MGMT
+    end
 ```
 
-| 区間 | アドレス |
+| 対象 | アドレス |
 | --- | --- |
-| control-plane → ToR1 | 10.220.240.2 → 10.220.240.1 |
-| worker → ToR2 | 10.220.240.6 → 10.220.240.5 |
-| ToR1 → ToR2 | 10.220.240.9 → 10.220.240.10 |
-| external client → ToR1 | 10.220.240.14 → 10.220.240.13 |
-| PodCIDR | 10.220.0.0/20 をノードごとに /24 で割り当て |
-| LoadBalancer VIP | 10.220.250.10/32 |
-| 管理ネットワーク | kind の Docker ブリッジと containerlab の 172.30.13.0/24 |
+| ToR → Kubernetes ノード | `10.220.240.1/30` → `10.220.240.2/30` |
+| ToR → 外部クライアント | `10.220.240.13/30` → `10.220.240.14/30` |
+| Pod ネットワーク | `10.220.0.0/20` から kubeadm がノード用 /24 を割り当て |
+| Service ネットワーク | `10.221.0.0/16` |
+| LoadBalancer VIP | `10.220.250.10/32` |
+| Containerlab コンテナ管理ネットワーク | `172.30.13.0/24` |
 
-kubelet の InternalIP と Kubernetes API は kind 管理ネットワークを使う。Pod のデータ経路は各ノードの `eth1` を使い、VXLAN や Geneve を無効にする。Cilium BGP Control Plane は受信経路をノードの Linux FIB に書き込まないため、ノードから PodCIDR 全体とクライアントセグメントへの経路は ToR 向けに設定する。ToR はノードと対向 ToR から受け取った最長一致の PodCIDR を FIB に載せる。Cilium は 10.220.0.0/16 宛の通信で送信元 Pod IP を維持する。 [Cilium 1.18.17 BGP Control Plane](https://github.com/cilium/cilium/blob/v1.18.17/Documentation/network/bgp-control-plane/bgp-control-plane.rst) [Cilium 1.18.17 Helm values](https://github.com/cilium/cilium/blob/v1.18.17/install/kubernetes/cilium/values.yaml)
+外部クライアントの通信は ToR と `cilium-uplink` を通る。ノードにはクライアントセグメントへの戻り経路を設定する。Docker の転送チェーンにはこのリンク、クライアント範囲、Pod 範囲に限定した許可を追加する。
 
 ## 準備
 
-[共通環境](../common/)を準備した Linux ゲストで実行する。Cilium の BPF 機能を使えるカーネルが必要。単独起動の目安は 4 vCPU、メモリ 8 GiB、空き容量 30 GiB。kind v0.30.0、Kubernetes v1.34.0、Cilium v1.18.17 を使用する。 [kind v0.30.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.30.0) [Cilium v1.18.17](https://github.com/cilium/cilium/releases/tag/v1.18.17)
+[共通環境](../common/README.md)を導入済みの Ubuntu 24.04 amd64 専用 VM で実行する。Kubernetes v1.34 系、Cilium 1.18.17、containerd 2.x を使用する。Kubernetes 用 CRI は専用の containerd プロセス、ソケット、データディレクトリを使う。[kubeadm の導入手順](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/) [containerd の設定](https://kubernetes.io/docs/setup/production-environment/container-runtimes/)
 
-`kind`、`kubectl`、`helm` が未導入なら、Linux x86_64 では以下でローカルに導入する。 [kind リリース](https://github.com/kubernetes-sigs/kind/releases/tag/v0.30.0) [kubectl インストール](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/) [Helm リリース](https://github.com/helm/helm/releases/tag/v3.19.5)
+Cilium ラボを以前の手順で起動済みなら、更新前のチェックアウトでそのラボの `sudo ./lab.sh down` を実行してから切り替える。
 
 ```bash
 ./install-tools.sh
@@ -45,51 +49,37 @@ kubelet の InternalIP と Kubernetes API は kind 管理ネットワークを�
 
 ## 起動と検証
 
-このディレクトリで実行する。初回はコンテナイメージと Helm チャートを取得する。
-
 ```bash
 sudo ./lab.sh up
 sudo ./lab.sh verify
 ```
 
-`up` の最後に `verify` を実行する。両方の ToR の Linux FIB に各 PodCIDR と VIP の所定の next hop が入り、ノードが対向ノードの Pod IP 宛に `eth1` を選ぶことを確認する。ノードをまたぐ Pod 間および外部から両 Pod への ICMP と、外部から LoadBalancer VIP への HTTP も検証する。
+`up` は Containerlab を起動し、kubeadm、kube-proxy、Cilium、検証 Pod と Service を構成する。検証では ToR の Linux FIB に Pod CIDR と VIP が入り、外部クライアントから Pod IP に ping、VIP に HTTP で到達できることを確認する。
 
 ```bash
-sudo kubectl --kubeconfig .lab-state/kubeconfig get nodes -o wide
-sudo kubectl --kubeconfig .lab-state/kubeconfig get ciliumbgpnodeconfigs
-sudo kubectl --kubeconfig .lab-state/kubeconfig -n lab-probe get service probe-worker
+sudo kubectl --kubeconfig /etc/kubernetes/admin.conf get nodes -o wide
+sudo kubectl --kubeconfig /etc/kubernetes/admin.conf -n lab-probe get pod,svc -o wide
 sudo docker exec clab-cilium-l3-tor1 vtysh -c 'show bgp ipv4 unicast summary'
 sudo docker exec clab-cilium-l3-tor1 vtysh -c 'show ip route bgp'
-sudo docker exec clab-cilium-l3-tor2 vtysh -c 'show ip route bgp'
 ```
 
 ### 経路の撤回と復旧
 
-ToR2 の worker 向けセッションを停止し、worker の PodCIDR と VIP が両 ToR から消えることを確認する。
+ToR の Kubernetes ノード向けセッションを一時停止すると、収束後に Pod CIDR と VIP が ToR の FIB から消える。確認後にセッションを復旧して再検証する。
 
 ```bash
-sudo docker exec clab-cilium-l3-tor2 vtysh \
-  -c 'configure terminal' -c 'router bgp 65102' -c 'neighbor 10.220.240.6 shutdown'
+sudo docker exec clab-cilium-l3-tor1 vtysh \
+  -c 'configure terminal' -c 'router bgp 65101' -c 'neighbor 10.220.240.2 shutdown'
 sudo docker exec clab-cilium-l3-tor1 vtysh -c 'show ip route bgp'
-sudo docker exec clab-cilium-l3-tor2 vtysh -c 'show ip route bgp'
-worker_pod=$(sudo kubectl --kubeconfig .lab-state/kubeconfig -n lab-probe \
-  get pod probe-worker -o 'jsonpath={.status.podIP}')
-sudo docker exec clab-cilium-l3-client ping -c 2 -W 2 "$worker_pod"
-sudo docker exec clab-cilium-l3-client wget -T 5 -O - http://10.220.250.10/
-```
-
-収束後、worker Pod への ping と VIP への HTTP は失敗し、control-plane 側の PodCIDR は残る。FRR の実行中の設定を戻し、再度検証する。
-
-```bash
-sudo docker exec clab-cilium-l3-tor2 vtysh \
-  -c 'configure terminal' -c 'router bgp 65102' -c 'no neighbor 10.220.240.6 shutdown'
+sudo docker exec clab-cilium-l3-tor1 vtysh \
+  -c 'configure terminal' -c 'router bgp 65101' -c 'no neighbor 10.220.240.2 shutdown'
 sudo ./lab.sh verify
 ```
 
 ## 撤去
 
+`down` はこのラボの kubeadm クラスターをリセットし、このラボの転送ルール、Containerlab トポロジー、専用 CRI サービスを撤去する。パッケージと CRI のイメージキャッシュは残る。初回構築が途中で失敗した場合も `down` の後に `up` を再試行できる。
+
 ```bash
 sudo ./lab.sh down
 ```
-
-containerlab を先に撤去してから、kind クラスターと専用 kubeconfig を削除する。トポロジー構築中に失敗した場合も `down` を実行してから `up` を再試行する。

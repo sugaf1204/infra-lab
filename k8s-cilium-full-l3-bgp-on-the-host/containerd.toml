@@ -1,0 +1,12 @@
+version = 3
+root = "/var/lib/containerd-cilium-lab"
+state = "/run/containerd-cilium-lab"
+
+[grpc]
+  address = "/run/containerd-cilium-lab/containerd.sock"
+
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
+  SystemdCgroup = true

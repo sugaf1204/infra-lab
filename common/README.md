@@ -9,28 +9,36 @@ Containerlab と Docker は node3 上の検証専用 VM で動かす。Docker �
 
 ## 物理ホストと VM の配置
 
-管理端末は node3 を SSH 踏み台にして、libvirt の管理ネットワークに接続したゲストへ入る。図の線は管理接続を示す。
+管理端末は node3 を SSH 踏み台にして、libvirt の管理ネットワークに接続したゲストへ入る。図の外側のリンクは管理接続、VM 枠内に名前付きで示すリンクは各ラボのデータ接続を表す。
 
 ```mermaid
 flowchart TB
-    ADMIN["管理端末"]
+    ADMIN["管理端末 / 管理 LAN"]
     subgraph NODE3["物理ホスト node3"]
-        HOST["node3 SSH"]
+        NIC["物理 NIC · 管理 LAN"]
+        HOST["node3 · Linux / SSH / libvirt"]
         NAT["libvirt default NAT"]
         subgraph FABRIC["infra-lab-fabric · 6 vCPU · 10 GiB · 80 GiB"]
             FM["ゲスト管理 NIC"]
-            CLOS["Full L3 IP Clos"]
-            K8S["Cilium on kind"]
+            CLOS["Containerlab · CLOS の FRR / ホスト コンテナ"]
+            K8S["kubeadm 単一ノード · Cilium / Pod"]
+            TOR["Containerlab · Cilium の ToR / クライアント"]
+            K8S ---|"仮想 veth · cilium-uplink"| TOR
         end
         subgraph OPENSTACK["infra-lab-openstack · 8 vCPU · 16 GiB · 120 GiB"]
             OM["ゲスト管理 NIC"]
-            OVN["DevStack / OVN BGP / Containerlab"]
+            OVN["DevStack / OVN BGP"]
+            CIRROS["Nova · CirrOS VM"]
+            OPENSTACK_FRR["Containerlab · leaf / spine コンテナ"]
+            OVN ---|"OVS / TAP"| CIRROS
+            OVN ---|"仮想 veth · ovnbgp-uplink"| OPENSTACK_FRR
         end
+        NIC --- HOST
         HOST --- NAT
         NAT --- FM
         NAT --- OM
     end
-    ADMIN -->|"SSH / ProxyJump"| HOST
+    ADMIN -->|"物理 LAN · SSH / ProxyJump"| NIC
 ```
 
 ## node3 の VM 管理

@@ -1,0 +1,12 @@
+[Unit]
+Description=Containerd CRI for the Cilium lab
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/containerd --config /etc/containerd/cilium-lab.toml
+Delegate=yes
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
