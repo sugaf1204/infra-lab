@@ -18,7 +18,7 @@ node3 に libvirt の検証専用 VM を2台作成し、Containerlab で3つの 
 | ラボ | 検証結果 |
 | --- | --- |
 | Full L3 IP Clos | **合格**。4本の eBGP セッションと両 leaf の2経路 ECMP を確認。leaf1–spine1 断で両 leaf が spine2 に収束し、復旧後は2経路に戻った。各段階でホスト間の双方向 ping に成功。 |
-| OpenStack OVN BGP Service Plugin | **テナント固定 IP に変更**。予備検証では固定 IP の /32 が spine の Linux FIB に入り、ICMP 応答は得られなかった。現行手順は固定 IP の広告・撤回・再広告と疎通を確認する。 |
-| Kubernetes Cilium Full L3 BGP on the Host | **kubeadm 単一ノード構成に変更**。外部クライアントからの Pod 疎通と LoadBalancer VIP への HTTP、BGP 停止時の撤回と復旧を検証する。 |
+| OpenStack OVN BGP Service Plugin | **経路交換は合格、疎通は未達**。Floating IP の割り当てを削除し、テナント固定 IP `10.53.0.22/32` の広告・撤回・再広告を確認した。spine からの ICMP は chassis の uplink に到着したが、CirrOS の TAP には届かなかった。 |
+| Kubernetes Cilium Full L3 BGP on the Host | **合格**。kubeadm 単一ノードが Ready になり、外部クライアントから Pod への ping と LoadBalancer VIP への HTTP に成功。ToR で Pod CIDR と VIP の撤回・再広告を確認した。 |
 
-両 VM の稼働中に、node3 の利用可能メモリは **6.3 GiB**、スワップ入出力カウンターはどちらも **0** だった。既存の CAPI VM は計測時に停止していた。物理構成と VM 管理手順は [共通セットアップ](common/README.md#物理ホストと-vm-の配置)、各ラボの論理構成は冒頭のディレクトリ一覧を参照。
+両 VM の稼働中に、node3 の利用可能メモリは **5.7 GiB**、スワップ入出力カウンターはどちらも **0** だった。既存の CAPI VM は計測時に停止していた。物理構成と VM 管理手順は [共通セットアップ](common/README.md#物理ホストと-vm-の配置)、各ラボの論理構成は冒頭のディレクトリ一覧を参照。

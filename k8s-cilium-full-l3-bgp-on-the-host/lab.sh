@@ -106,6 +106,7 @@ up() {
     jq -e 'any(.spec.taints[]?; .key == "node-role.kubernetes.io/control-plane" and .effect == "NoSchedule")' >/dev/null; then
     kubectl taint node "$node" node-role.kubernetes.io/control-plane:NoSchedule-
   fi
+  kubectl label node "$node" node.kubernetes.io/exclude-from-external-load-balancers-
   helm upgrade --install cilium oci://quay.io/cilium/charts/cilium \
     --version 1.18.17 --namespace kube-system --values cilium-values.yaml --wait --timeout 10m
   local crds=(
@@ -114,7 +115,11 @@ up() {
     crd/ciliumbgppeerconfigs.cilium.io
     crd/ciliumloadbalancerippools.cilium.io
   )
-  kubectl wait --for=create --timeout=120s "${crds[@]}"
+  kubectl -n kube-system rollout status deployment/cilium-operator --timeout=5m
+  local crd
+  for crd in "${crds[@]}"; do
+    kubectl wait --for=create --timeout=120s "$crd"
+  done
   kubectl wait --for=condition=Established --timeout=120s "${crds[@]}"
   kubectl apply -f bgp.yaml -f probes.yaml
   verify

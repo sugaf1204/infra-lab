@@ -105,6 +105,8 @@ sudo ./verify.sh reachable
 
 `advertised` は固定 IP `10.53.0.22/32` をテーブル 42、spine の BGP RIB と Linux FIB で照合する。`reachable` は spine から CirrOS の固定 IP に直接 ping する。テーブル 10 では leaf からのデフォルト経路を確認できる。
 
+node3 の実機では固定 IP の広告・撤回・再広告を確認した。疎通試験では ICMP echo request が `ovnbgp-uplink` に到着し、CirrOS の TAP では観測されなかった。Northbound にはテナント CIDR 向けの経路がある一方、Southbound の `lr_in_ip_routing` には対応するフローがなく、`ovn-trace` は `bgp-lr-main-dead-lrp` を選択した。
+
 Route leaking を無効化して広告を撤回し、再び有効化して再広告を確認する。CirrOS と固定 IP は保持する。
 
 ```bash
