@@ -7,6 +7,32 @@ Containerlab と Docker は node3 上の検証専用 VM で動かす。Docker �
 | `infra-lab-fabric` | CLOS と Cilium | Ubuntu 24.04 amd64 | 6 | 10 GiB | 80 GiB |
 | `infra-lab-openstack` | OpenStack | Ubuntu 26.04 amd64 | 8 | 16 GiB | 120 GiB |
 
+## 物理ホストと VM の配置
+
+管理端末は node3 を SSH 踏み台にして、libvirt の管理ネットワークに接続したゲストへ入る。図の線は管理接続を示す。
+
+```mermaid
+flowchart TB
+    ADMIN["管理端末"]
+    subgraph NODE3["物理ホスト node3"]
+        HOST["node3 SSH"]
+        NAT["libvirt default NAT"]
+        subgraph FABRIC["infra-lab-fabric · 6 vCPU · 10 GiB · 80 GiB"]
+            FM["ゲスト管理 NIC"]
+            CLOS["Full L3 IP Clos"]
+            K8S["Cilium on kind"]
+        end
+        subgraph OPENSTACK["infra-lab-openstack · 8 vCPU · 16 GiB · 120 GiB"]
+            OM["ゲスト管理 NIC"]
+            OVN["DevStack / OVN BGP / Containerlab"]
+        end
+        HOST --- NAT
+        NAT --- FM
+        NAT --- OM
+    end
+    ADMIN -->|"SSH / ProxyJump"| HOST
+```
+
 ## node3 の VM 管理
 
 `vm.sh` は既存の libvirt `default` NAT を使い、指定したクラウドイメージを独立した qcow2 ディスクにコピーする。ゲストの管理 NIC は NAT 経由で APT、Git、コンテナレジストリにアクセスする。ラボのデータポートは各トポロジー内で作成する。

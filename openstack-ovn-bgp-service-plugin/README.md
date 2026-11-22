@@ -2,14 +2,32 @@
 
 Neutron 2026.2 の組み込み `ovn-bgp` service plugin と OVN Neutron Agent の `ovn-bgp` 拡張を有効にし、別のルーティングドメインから Floating IP への疎通と経路撤回を確認する。OVN が Linux VRF のテーブル 42 に置いた経路を chassis の FRR が取得し、leaf、spine の順に eBGP で伝える。leaf から受信するデフォルト経路はテーブル 10 に入れ、OVN の戻り経路に使う。
 
-```text
-CirrOS ─ Geneve tenant network ─ Neutron router / Floating IP
-                                   │ OVN / OVS
-                                   │ br-bgp-0 / FRR AS 65231
-                                   │ eBGP unnumbered over veth
-                containerlab leaf AS 65232
-                                   │ eBGP 192.0.2.0/31
-               containerlab spine AS 65233 (probe 203.0.113.10)
+## 論理構成
+
+```mermaid
+flowchart TB
+    subgraph ROUTES["経路広告"]
+        VRF["OVN テーブル 42"]
+        FRR["chassis FRR · AS65231"]
+        LEAF["leaf · AS65232"]
+        SPINE["spine · AS65233"]
+        VRF -->|"198.51.100.100/32"| FRR
+        FRR -->|"eBGP unnumbered"| LEAF
+        LEAF -->|"eBGP · 192.0.2.0/31"| SPINE
+    end
+    subgraph DATA["疎通試験"]
+        SRC["spine · 送信元 203.0.113.10"]
+        UPLINK["leaf → ovnbgp-uplink → br-bgp-0"]
+        MAIN["OVN · bgp-lr-main"]
+        DROP["bgp-lr-main-dead-lrp"]
+        ROUTER["Neutron router · Floating IP 198.51.100.100"]
+        VM["CirrOS"]
+        SRC -->|"ICMP"| UPLINK
+        UPLINK --> MAIN
+        MAIN -->|"ovn-trace で選択"| DROP
+        MAIN -.->|"転送未達"| ROUTER
+        ROUTER ---|"Geneve tenant network"| VM
+    end
 ```
 
 ## 構築

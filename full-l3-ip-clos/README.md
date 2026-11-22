@@ -2,18 +2,22 @@
 
 2 台の spine と 2 台の leaf を結ぶ IPv4 Clos。leaf–spine の各リンクは /31 で、ルーターごとに AS を割り当てる。各 leaf が直結するホスト用 /24 を eBGP で広告し、対向 leaf は 2 台の spine を ECMP next hop として使う。
 
+## 論理構成
+
 ```mermaid
 flowchart TB
-  S1[spine1 AS65001]
-  S2[spine2 AS65002]
-  L1[leaf1 AS65101]
-  L2[leaf2 AS65102]
-  S1 --- L1
-  S1 --- L2
-  S2 --- L1
-  S2 --- L2
-  L1 --- H1[host1 10.211.1.2]
-  L2 --- H2[host2 10.211.2.2]
+    S1["spine1 · AS65001"]
+    S2["spine2 · AS65002"]
+    L1["leaf1 · AS65101"]
+    L2["leaf2 · AS65102"]
+    H1["host1 · 10.211.1.2"]
+    H2["host2 · 10.211.2.2"]
+    S1 ---|"eBGP · 10.211.0.0/31"| L1
+    S2 ---|"eBGP · 10.211.0.2/31"| L1
+    S1 ---|"eBGP · 10.211.0.4/31"| L2
+    S2 ---|"eBGP · 10.211.0.6/31"| L2
+    L1 ---|"10.211.1.0/24"| H1
+    L2 ---|"10.211.2.0/24"| H2
 ```
 
 | 接続 | データリンク |

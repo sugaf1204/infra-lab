@@ -2,10 +2,23 @@
 
 kind の各 Kubernetes ノードで Cilium の BGP speaker を動かし、ノード固有の PodCIDR を隣接する FRR ToR に eBGP で広告する。ToR 間は独立したルーテッドリンクで接続する。Pod 間と外部クライアントから Pod IP への通信を IPv4 native routing で検証する。LoadBalancer Service の VIP は、backend が Ready な worker からだけ広告し、外部から HTTP で応答を確認する。
 
-```text
-control-plane (AS65201) -- ToR1 (AS65101) -- ToR2 (AS65102) -- worker (AS65202)
-                              |
-                        external client
+## 論理構成
+
+```mermaid
+flowchart TB
+    T1["ToR1 · AS65101"]
+    T2["ToR2 · AS65102"]
+    N1["kind control-plane · AS65201"]
+    N2["kind worker · AS65202<br/>LB VIP 10.220.250.10"]
+    P1["control-plane 上の Pod"]
+    P2["worker 上の Pod"]
+    CLIENT["外部クライアント · 10.220.240.14"]
+    T1 ---|"eBGP · 10.220.240.8/30"| T2
+    T1 ---|"eBGP · 10.220.240.0/30 · eth1"| N1
+    T2 ---|"eBGP · 10.220.240.4/30 · eth1"| N2
+    T1 ---|"10.220.240.12/30"| CLIENT
+    N1 --- P1
+    N2 --- P2
 ```
 
 | 区間 | アドレス |
