@@ -1,10 +1,11 @@
 name: cilium-l3
 mgmt:
   network: clab-cilium-l3-mgmt
-  ipv4-subnet: 172.30.13.0/24
+  skip-when-unused: true
 topology:
   groups:
     router:
+      network-mode: none
       image: quay.io/frrouting/frr:10.4.1
       sysctls:
         net.ipv4.ip_forward: 1
@@ -23,16 +24,20 @@ topology:
       group: router
       binds:
         - frr/tor1.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip addr replace 10.220.240.13/30 dev eth2
     client:
       kind: linux
-      image: alpine:3.22.1
-      cmd: sleep infinity
+      group: router
+      binds:
+        - frr/client.conf:/etc/frr/frr.conf:ro
       exec:
-        - ip addr replace 10.220.240.14/30 dev eth1
-        - ip route replace 10.220.0.0/20 via 10.220.240.13 dev eth1
-        - ip route replace 10.220.250.10/32 via 10.220.240.13 dev eth1
+        - ip -4 addr replace 10.220.240.14/32 dev lo
+    kube-host-frr:
+      kind: linux
+      image: quay.io/frrouting/frr:10.4.1
+      network-mode: host
+      binds:
+        - ../common/frr/daemons:/etc/frr/daemons:ro
+        - frr/host.conf:/etc/frr/frr.conf:ro
   links:
     - endpoints: ["node-frr:eth2", "tor1:eth1"]
     - endpoints: ["tor1:eth2", "client:eth1"]
@@ -41,3 +46,8 @@ topology:
         node: node-frr
         interface: eth1
       host-interface: cilium-uplink
+    - type: host
+      endpoint:
+        node: node-frr
+        interface: eth3
+      host-interface: cilium-routes

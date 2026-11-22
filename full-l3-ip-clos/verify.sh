@@ -40,8 +40,8 @@ wait_for_nexthops() {
 
 check_peers() {
   node "$1" vtysh -c 'show bgp ipv4 unicast summary json' |
-    jq --exit-status '
-      .peers | length == 2 and all(.[]; .state == "Established" and .idType == "interface")
+    jq --exit-status --argjson interfaces "$2" '
+      .peers | keys == $interfaces and all(.[]; .state == "Established" and .idType == "interface")
     ' >/dev/null
 }
 
@@ -55,10 +55,17 @@ case "${1:-}" in
   *) echo "Usage: $0 [--failover]" >&2; exit 2 ;;
 esac
 
-wait_for_nexthops leaf1 10.211.2.0/24 '["eth1","eth2"]'
-wait_for_nexthops leaf2 10.211.1.0/24 '["eth1","eth2"]'
-for router in leaf1 leaf2 spine1 spine2; do
-  check_peers "$router"
+wait_for_nexthops leaf1 10.211.2.2/32 '["eth1","eth2"]'
+wait_for_nexthops leaf2 10.211.1.2/32 '["eth1","eth2"]'
+for router in leaf1 leaf2; do
+  check_peers "$router" '["eth1","eth2","eth3"]'
+done
+for router in spine1 spine2; do
+  check_peers "$router" '["eth1","eth2"]'
+done
+for host in host1 host2; do
+  wait_for_nexthops "$host" 0.0.0.0/0 '["eth1"]'
+  check_peers "$host" '["eth1"]'
 done
 check_traffic
 
@@ -67,12 +74,12 @@ if [[ ${1:-} == --failover ]]; then
   trap 'exit 130' INT
   trap 'exit 143' TERM
   node leaf1 ip link set eth1 down
-  wait_for_nexthops leaf1 10.211.2.0/24 '["eth2"]'
-  wait_for_nexthops leaf2 10.211.1.0/24 '["eth2"]'
+  wait_for_nexthops leaf1 10.211.2.2/32 '["eth2"]'
+  wait_for_nexthops leaf2 10.211.1.2/32 '["eth2"]'
   check_traffic
   node leaf1 ip link set eth1 up
   trap - EXIT
-  wait_for_nexthops leaf1 10.211.2.0/24 '["eth1","eth2"]'
-  wait_for_nexthops leaf2 10.211.1.0/24 '["eth1","eth2"]'
+  wait_for_nexthops leaf1 10.211.2.2/32 '["eth1","eth2"]'
+  wait_for_nexthops leaf2 10.211.1.2/32 '["eth1","eth2"]'
   check_traffic
 fi

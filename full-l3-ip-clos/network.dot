@@ -1,0 +1,49 @@
+graph clos {
+  graph [rankdir=TB, splines=line, bgcolor="#ffffff", pad=0.2, nodesep=0.8, ranksep=0.65];
+  node [shape=plain, fontname="Helvetica", fontcolor="#172b4d"];
+  edge [color="#475569", penwidth=1.5];
+
+  spine1 [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
+      <TR><TD COLSPAN="2"><B>spine1</B><BR/>FRR · AS65001</TD></TR>
+      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
+    </TABLE>>];
+  spine2 [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
+      <TR><TD COLSPAN="2"><B>spine2</B><BR/>FRR · AS65002</TD></TR>
+      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
+    </TABLE>>];
+  leaf1 [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
+      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
+      <TR><TD COLSPAN="2"><B>leaf1</B><BR/>FRR · AS65101</TD></TR>
+      <TR><TD COLSPAN="2" PORT="eth3" BGCOLOR="#dbeafe">eth3</TD></TR>
+    </TABLE>>];
+  leaf2 [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
+      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
+      <TR><TD COLSPAN="2"><B>leaf2</B><BR/>FRR · AS65102</TD></TR>
+      <TR><TD COLSPAN="2" PORT="eth3" BGCOLOR="#dbeafe">eth3</TD></TR>
+    </TABLE>>];
+  host1 [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#f0fdf4">
+      <TR><TD PORT="eth1" BGCOLOR="#dcfce7">eth1</TD></TR>
+      <TR><TD><B>host1</B><BR/>FRR · AS65211<BR/>lo 10.211.1.2/32</TD></TR>
+    </TABLE>>];
+  host2 [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#f0fdf4">
+      <TR><TD PORT="eth1" BGCOLOR="#dcfce7">eth1</TD></TR>
+      <TR><TD><B>host2</B><BR/>FRR · AS65212<BR/>lo 10.211.2.2/32</TD></TR>
+    </TABLE>>];
+
+  {rank=same; spine1; spine2}
+  {rank=same; leaf1; leaf2}
+  {rank=same; host1; host2}
+
+  spine1:eth1:s -- leaf1:eth1:n;
+  spine1:eth2:s -- leaf2:eth1:n;
+  spine2:eth1:s -- leaf1:eth2:n;
+  spine2:eth2:s -- leaf2:eth2:n;
+  leaf1:eth3:s -- host1:eth1:n;
+  leaf2:eth3:s -- host2:eth1:n;
+}

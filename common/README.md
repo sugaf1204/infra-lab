@@ -9,37 +9,13 @@ Containerlab と Docker は node3 上の検証専用 VM で動かす。Docker �
 
 ## 物理ホストと VM の配置
 
-管理端末は node3 を SSH 踏み台にして、libvirt の管理ネットワークに接続したゲストへ入る。図の外側のリンクは管理接続、VM 枠内に名前付きで示すリンクは各ラボのデータ接続を表す。
+管理端末は node3 を SSH 踏み台にして、libvirt の管理ネットワークに接続したゲストへ入る。この図は管理 LAN から各 VM までの接続と配置を示す。
 
-```mermaid
-flowchart TB
-    ADMIN["管理端末 / 管理 LAN"]
-    subgraph HOST_BOUNDARY["物理ホスト"]
-        NIC["物理 NIC · 管理 LAN"]
-        HOST["Linux / SSH / libvirt"]
-        NAT["libvirt default NAT"]
-        subgraph FABRIC["CLOS / Kubernetes 用 VM"]
-            FM["ゲスト管理 NIC"]
-            CLOS["Containerlab · CLOS の FRR / ホスト コンテナ"]
-            K8S["kubeadm 単一ノード · Cilium / Pod"]
-            TOR["Containerlab · ノード内 FRR / ToR / クライアント"]
-            K8S ---|"仮想 veth · cilium-uplink"| TOR
-        end
-        subgraph OPENSTACK["OpenStack 用 VM"]
-            OM["ゲスト管理 NIC"]
-            OVN["DevStack / OVN BGP"]
-            CIRROS["Nova · CirrOS VM"]
-            OPENSTACK_FRR["Containerlab · leaf / spine コンテナ"]
-            OVN ---|"OVS / TAP"| CIRROS
-            OVN ---|"仮想 veth · ovnbgp-uplink"| OPENSTACK_FRR
-        end
-        NIC --- HOST
-        HOST --- NAT
-        NAT --- FM
-        NAT --- OM
-    end
-    ADMIN -->|"物理 LAN · SSH / ProxyJump"| NIC
-```
+![管理端末から物理 NIC、ホストブリッジ、libvirt NAT を経由する VM 管理ネットワーク](network.svg)
+
+[図のソース](network.dot)
+
+図中の `vnet0`、`vnet1` は実機で採取した名前。起動順によって変わる。
 
 ## node3 の VM 管理
 

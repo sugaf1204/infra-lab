@@ -1,0 +1,58 @@
+digraph ovn {
+  graph [rankdir=TB, bgcolor="#ffffff", pad=0.2, nodesep=0.42, ranksep=0.58,
+         fontname="Helvetica", newrank=true];
+  node [shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#64748b",
+        fontname="Helvetica", fontcolor="#172b4d", margin="0.14,0.1"];
+  edge [color="#475569", penwidth=1.4, fontname="Helvetica",
+        fontcolor="#334155", fontsize=10, arrowsize=0.7];
+
+  spine [shape=plain, label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
+      <TR><TD><B>spine</B><BR/>FRR · AS65233<BR/>lo 203.0.113.10/32</TD></TR>
+      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD></TR>
+    </TABLE>>];
+  leaf [shape=plain, label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
+      <TR><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
+      <TR><TD><B>leaf</B><BR/>FRR · AS65232</TD></TR>
+      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD></TR>
+    </TABLE>>];
+
+  subgraph cluster_chassis {
+    label="OpenStack chassis  |  VM"; labeljust=l;
+    style=rounded; color="#94a3b8"; margin=18;
+    boundary [shape=plain, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
+        <TR><TD PORT="uplink" BGCOLOR="#dbeafe">ovnbgp-uplink</TD></TR>
+        <TR><TD PORT="control"><B>OVS br-bgp-0</B><BR/>FRR peering interface</TD></TR>
+        <TR><TD PORT="patch" BGCOLOR="#dbeafe">OVS patch port</TD></TR>
+      </TABLE>>];
+    integration [label="OVS br-int\nOVN ingress pipeline"];
+    routing [label="bgp-lr-main\nOVN logical router"];
+    tenant [label="Geneve logical switch\n10.53.0.0/24", fillcolor="#f0fdf4"];
+
+    subgraph cluster_bgp {
+      label="Chassis routing"; labeljust=l; color="#94a3b8"; style=rounded;
+      frr [label="FRR · AS65231"];
+      export [label="ovnvrf42 · table 42\nTenant /32 export"];
+      imports [label="ovnvrf10 · table 10\nIPv4 default via IPv6"];
+    }
+    subgraph cluster_guest {
+      label="CirrOS VM"; labelloc=b; color="#94a3b8"; style=rounded;
+      nic [label="Guest NIC\n10.53.0.22", fillcolor="#f0fdf4"];
+    }
+
+    boundary:patch:s -> integration [dir=none, label="  OVS patch pair"];
+    integration -> routing [label="  Logical routing"];
+    routing -> tenant [color="#b42318", fontcolor="#b42318", style=dashed,
+                       arrowhead=tee, label="  Fixed-IP forwarding\n  not observed"];
+    tenant -> nic [dir=none, label="  br-int → compute TAP"];
+    export -> frr [color="#2563a5", style=dashed, label="  Tenant /32"];
+    frr -> imports [color="#2563a5", style=dashed, label="  Default"];
+    boundary:control:e -> frr:w [dir=none, color="#2563a5", style=dashed,
+                     constraint=false];
+    {rank=same; boundary; frr}
+  }
+  spine:eth1:s -> leaf:eth2:n [dir=none, color="#475569"];
+  leaf:eth1:s -> boundary:uplink:n [dir=none, color="#475569"];
+}

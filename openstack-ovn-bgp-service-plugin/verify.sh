@@ -12,13 +12,17 @@ fixed_ip=10.53.0.22
 probe=203.0.113.10
 
 check_routes() {
-  local summary bgp fib vrf
+  local summary bgp fib vrf default_route
   summary=$(docker exec "$leaf" vtysh -c 'show bgp ipv4 unicast summary json') || return 1
   jq -e '.peers | keys == ["eth1", "eth2"] and all(.[]; .state == "Established" and .idType == "interface")' <<< "$summary" >/dev/null || return 1
 
   bgp=$(docker exec "$spine" vtysh -c "show bgp ipv4 unicast $fixed_ip/32 json") || return 1
   fib=$(docker exec "$spine" ip -j -4 route show exact "$fixed_ip/32") || return 1
   vrf=$(ip -j -4 route show table 42 exact "$fixed_ip/32") || return 1
+  default_route=$(ip -j -4 route show table 10 default) || return 1
+  jq -e '
+    length == 1 and all(.[]; .protocol == "bgp" and .via.family == "inet6" and .dev == "br-bgp-0")
+  ' <<< "$default_route" >/dev/null || return 1
 
   case "$check" in
     advertised|reachable)

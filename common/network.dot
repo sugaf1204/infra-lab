@@ -1,0 +1,36 @@
+graph management {
+  graph [rankdir=TB, newrank=true, bgcolor="#ffffff", pad=0.2, nodesep=0.35, ranksep=0.45,
+         fontname="Helvetica"];
+  node [shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#64748b",
+        fontname="Helvetica", fontcolor="#172b4d", margin="0.15,0.1"];
+  edge [color="#475569", penwidth=1.4, fontname="Helvetica",
+        fontcolor="#334155", fontsize=10];
+
+  admin [label="Admin workstation"];
+  lan [label="Management LAN"];
+  subgraph cluster_physical {
+    label="Physical host  |  node3"; labeljust=l;
+    color="#94a3b8"; style=rounded; margin=16;
+    nic [label="eno1\nPhysical NIC"];
+    bridge [label="br0\nHost LAN bridge"];
+    nat [label="virbr0\nlibvirt default · NAT"];
+    subgraph cluster_fabric {
+      label="VM  |  infra-lab-fabric"; labelloc=b;
+      color="#94a3b8"; style=rounded;
+      fabric [label="enp1s0\nVirtio NIC"];
+    }
+    subgraph cluster_openstack {
+      label="VM  |  infra-lab-openstack"; labelloc=b;
+      color="#94a3b8"; style=rounded;
+      openstack [label="enp1s0\nVirtio NIC"];
+    }
+
+    nic -- bridge;
+    bridge -- nat [label="  IP forwarding / NAT", style=dashed, color="#2563a5"];
+    nat -- fabric [label="vnet1"];
+    nat -- openstack [label="vnet0"];
+    {rank=same; fabric; openstack}
+  }
+  admin -- lan;
+  lan -- nic [label="  Ethernet"];
+}

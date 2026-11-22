@@ -4,28 +4,11 @@ Neutron 2026.2 の組み込み `ovn-bgp` service plugin と OVN Neutron Agent �
 
 ## 論理構成
 
-```mermaid
-flowchart TB
-    subgraph CLAB["Containerlab コンテナ"]
-        SPINE["spine · AS65233<br/>検証元 203.0.113.10"]
-        LEAF["leaf · AS65232"]
-        SPINE ---|"Unnumbered · eth1 ↔ eth2"| LEAF
-    end
-    subgraph CHASSIS["OpenStack chassis"]
-        FRR["chassis FRR · AS65231"]
-        UPLINK["OVS br-bgp-0"]
-        VRF["Linux VRF · テーブル 42"]
-        ROUTER["bgp-lr-main / テナント Geneve ネットワーク"]
-        VRF -->|"固定 IP 10.53.0.22/32"| FRR
-        UPLINK --> ROUTER
-    end
-    subgraph GUEST["Nova が起動する CirrOS VM"]
-        VNIC["テナント NIC · 10.53.0.22"]
-    end
-    LEAF ---|"veth · ovnbgp-uplink"| UPLINK
-    FRR -.->|"Unnumbered · br-bgp-0 ↔ eth1 · /32 広告"| LEAF
-    ROUTER -->|"OVS / TAP · 固定 IP 宛の検証経路"| VNIC
-```
+![spine から chassis への eBGP Unnumbered、固定 IP の広告と OVN 転送の未達箇所](network.svg)
+
+[図のソース](network.dot)
+
+`spine:eth1` と `leaf:eth2`、および `leaf:eth1` と `ovnbgp-uplink` は veth。後者の chassis 側 FRR は OVS の `br-bgp-0` でピアを確立する。
 
 ## 構築
 
@@ -101,7 +84,7 @@ sudo ./verify.sh advertised
 sudo ./verify.sh reachable
 ```
 
-`advertised` は固定 IP `10.53.0.22/32` をテーブル 42、spine の BGP RIB と Linux FIB で照合する。`reachable` は spine から CirrOS の固定 IP に直接 ping する。テーブル 10 では leaf からのデフォルト経路を確認できる。
+`advertised` は固定 IP `10.53.0.22/32` をテーブル 42、spine の BGP RIB と Linux FIB で照合する。`reachable` は spine から CirrOS の固定 IP に直接 ping する。テーブル 10 では leaf から BGP で学習した IPv4 デフォルトと IPv6 next hop を確認する。CirrOS のテナント NIC は Neutron の DHCP で構成される。BGP の検証範囲は chassis から spine までのアンダーレイ。
 
 node3 の実機では固定 IP の広告・撤回・再広告を確認した。疎通試験では ICMP echo request が `ovnbgp-uplink` に到着し、CirrOS の TAP では観測されなかった。Northbound にはテナント CIDR 向けの経路がある一方、Southbound の `lr_in_ip_routing` には対応するフローがなく、`ovn-trace` は `bgp-lr-main-dead-lrp` を選択した。
 

@@ -8,6 +8,9 @@ repository=https://pkgs.k8s.io/core:/stable:/v1.34/deb
 
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl gpg containerd conntrack
+if ! modinfo vrf >/dev/null 2>&1; then
+  sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+fi
 curl -fsSLo Release.key "$repository/Release.key"
 gpg --batch --dearmor --output kubernetes-apt-keyring.gpg Release.key
 sudo install -d -m 0755 /etc/apt/keyrings
