@@ -1,33 +1,31 @@
 # Full L3 IP Clos
 
-2 台の spine と 2 台の leaf を結ぶ IPv4 Clos。leaf–spine の各リンクは /31 で、ルーターごとに AS を割り当てる。各 leaf が直結するホスト用 /24 を eBGP で広告し、対向 leaf は 2 台の spine を ECMP next hop として使う。
+2 台の spine と 2 台の leaf を結ぶ IPv4 Clos。leaf–spine はすべてインターフェース指定の eBGP Unnumbered で接続する。IPv6 link-local は自動生成され、IPv4 プレフィックスを IPv6 next hop 付きで交換する。各 leaf が直結するホスト用 /24 を eBGP で広告し、対向 leaf は 2 台の spine を ECMP next hop として使う。
 
 ## 論理構成
 
 ```mermaid
 flowchart TB
-    subgraph FABRIC["node3 内の libvirt VM · infra-lab-fabric"]
-        S1["spine1 · FRR コンテナ · AS65001"]
-        S2["spine2 · FRR コンテナ · AS65002"]
-        L1["leaf1 · FRR コンテナ · AS65101"]
-        L2["leaf2 · FRR コンテナ · AS65102"]
-        H1["host1 · Linux コンテナ · 10.211.1.2"]
-        H2["host2 · Linux コンテナ · 10.211.2.2"]
-        S1 ---|"eBGP · 10.211.0.0/31"| L1
-        S2 ---|"eBGP · 10.211.0.2/31"| L1
-        S1 ---|"eBGP · 10.211.0.4/31"| L2
-        S2 ---|"eBGP · 10.211.0.6/31"| L2
-        L1 ---|"10.211.1.0/24"| H1
-        L2 ---|"10.211.2.0/24"| H2
-    end
+    S1["spine1 · FRR コンテナ · AS65001"]
+    S2["spine2 · FRR コンテナ · AS65002"]
+    L1["leaf1 · FRR コンテナ · AS65101"]
+    L2["leaf2 · FRR コンテナ · AS65102"]
+    H1["host1 · Linux コンテナ · 10.211.1.2"]
+    H2["host2 · Linux コンテナ · 10.211.2.2"]
+    S1 ---|"Unnumbered · eth1 ↔ eth1"| L1
+    S2 ---|"Unnumbered · eth1 ↔ eth2"| L1
+    S1 ---|"Unnumbered · eth2 ↔ eth1"| L2
+    S2 ---|"Unnumbered · eth2 ↔ eth2"| L2
+    L1 ---|"10.211.1.0/24"| H1
+    L2 ---|"10.211.2.0/24"| H2
 ```
 
-| 接続 | データリンク |
+| 接続 | インターフェースまたはサブネット |
 | --- | --- |
-| leaf1 – spine1 | 10.211.0.0/31 |
-| leaf1 – spine2 | 10.211.0.2/31 |
-| leaf2 – spine1 | 10.211.0.4/31 |
-| leaf2 – spine2 | 10.211.0.6/31 |
+| leaf1 – spine1 | leaf1 eth1 ↔ spine1 eth1 |
+| leaf1 – spine2 | leaf1 eth2 ↔ spine2 eth1 |
+| leaf2 – spine1 | leaf2 eth1 ↔ spine1 eth2 |
+| leaf2 – spine2 | leaf2 eth2 ↔ spine2 eth2 |
 | host1 – leaf1 | 10.211.1.0/24 |
 | host2 – leaf2 | 10.211.2.0/24 |
 

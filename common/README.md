@@ -14,18 +14,18 @@ Containerlab と Docker は node3 上の検証専用 VM で動かす。Docker �
 ```mermaid
 flowchart TB
     ADMIN["管理端末 / 管理 LAN"]
-    subgraph NODE3["物理ホスト node3"]
+    subgraph HOST_BOUNDARY["物理ホスト"]
         NIC["物理 NIC · 管理 LAN"]
-        HOST["node3 · Linux / SSH / libvirt"]
+        HOST["Linux / SSH / libvirt"]
         NAT["libvirt default NAT"]
-        subgraph FABRIC["infra-lab-fabric · 6 vCPU · 10 GiB · 80 GiB"]
+        subgraph FABRIC["CLOS / Kubernetes 用 VM"]
             FM["ゲスト管理 NIC"]
             CLOS["Containerlab · CLOS の FRR / ホスト コンテナ"]
             K8S["kubeadm 単一ノード · Cilium / Pod"]
-            TOR["Containerlab · Cilium の ToR / クライアント"]
+            TOR["Containerlab · ノード内 FRR / ToR / クライアント"]
             K8S ---|"仮想 veth · cilium-uplink"| TOR
         end
-        subgraph OPENSTACK["infra-lab-openstack · 8 vCPU · 16 GiB · 120 GiB"]
+        subgraph OPENSTACK["OpenStack 用 VM"]
             OM["ゲスト管理 NIC"]
             OVN["DevStack / OVN BGP"]
             CIRROS["Nova · CirrOS VM"]

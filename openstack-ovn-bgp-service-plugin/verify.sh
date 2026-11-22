@@ -14,7 +14,7 @@ probe=203.0.113.10
 check_routes() {
   local summary bgp fib vrf
   summary=$(docker exec "$leaf" vtysh -c 'show bgp ipv4 unicast summary json') || return 1
-  jq -e '[.peers[]? | .state == "Established"] == [true, true]' <<< "$summary" >/dev/null || return 1
+  jq -e '.peers | keys == ["eth1", "eth2"] and all(.[]; .state == "Established" and .idType == "interface")' <<< "$summary" >/dev/null || return 1
 
   bgp=$(docker exec "$spine" vtysh -c "show bgp ipv4 unicast $fixed_ip/32 json") || return 1
   fib=$(docker exec "$spine" ip -j -4 route show exact "$fixed_ip/32") || return 1
@@ -23,7 +23,7 @@ check_routes() {
   case "$check" in
     advertised|reachable)
       jq -e 'any(.paths[]?; .valid and .bestpath.overall)' <<< "$bgp" >/dev/null &&
-        jq -e 'any(.[]; .protocol == "bgp" and .gateway == "192.0.2.1")' <<< "$fib" >/dev/null &&
+        jq -e 'any(.[]; .protocol == "bgp" and .dev == "eth1" and .via.family == "inet6")' <<< "$fib" >/dev/null &&
         jq -e 'any(.[]; .protocol == "ovn")' <<< "$vrf" >/dev/null
       ;;
     withdrawn)

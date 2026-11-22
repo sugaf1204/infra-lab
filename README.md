@@ -1,13 +1,13 @@
 # Infra Lab
 
-node3 上の検証専用 Linux VM で、Containerlab を使って IPv4 BGP を検証する。
+node3 上の検証専用 Linux VM で、Containerlab を使って IPv4 経路を交換する。BGP ピアはすべてインターフェース指定の Unnumbered とし、IPv6 link-local を自動検出する。
 
 | ディレクトリ | 検証内容 |
 | --- | --- |
 | [common](common/) | Linux VM の前提、Docker、Containerlab、共通 FRR 設定 |
 | [Full L3 IP Clos](full-l3-ip-clos/) | 2 spine / 2 leaf の eBGP、ECMP、リンク障害時の収束と疎通 |
 | [OpenStack OVN BGP Service Plugin](openstack-ovn-bgp-service-plugin/) | Neutron の OVN BGP Service Plugin と外部ルーター間の経路広告・撤回 |
-| [Kubernetes Cilium Full L3 BGP on the Host](k8s-cilium-full-l3-bgp-on-the-host/) | kubeadm 単一ノードと ToR 間の host BGP、Pod CIDR と LoadBalancer VIP の広告 |
+| [Kubernetes Cilium Full L3 BGP on the Host](k8s-cilium-full-l3-bgp-on-the-host/) | kubeadm 単一ノードの Cilium → ローカル FRR → ToR、Pod CIDR と LoadBalancer VIP の広告 |
 
 [共通セットアップ](common/README.md)を実行してから、各ラボの README に従う。各ラボの管理ネットワークとデータリンクは固有の名前とアドレスを使う。データリンクは検証専用 VM 内に閉じる。
 
@@ -17,8 +17,8 @@ node3 に libvirt の検証専用 VM を2台作成し、Containerlab で3つの 
 
 | ラボ | 検証結果 |
 | --- | --- |
-| Full L3 IP Clos | **合格**。4本の eBGP セッションと両 leaf の2経路 ECMP を確認。leaf1–spine1 断で両 leaf が spine2 に収束し、復旧後は2経路に戻った。各段階でホスト間の双方向 ping に成功。 |
-| OpenStack OVN BGP Service Plugin | **経路交換は合格、疎通は未達**。Floating IP の割り当てを削除し、テナント固定 IP `10.53.0.22/32` の広告・撤回・再広告を確認した。spine からの ICMP は chassis の uplink に到着したが、CirrOS の TAP には届かなかった。 |
-| Kubernetes Cilium Full L3 BGP on the Host | **合格**。kubeadm 単一ノードが Ready になり、外部クライアントから Pod への ping と LoadBalancer VIP への HTTP に成功。ToR で Pod CIDR と VIP の撤回・再広告を確認した。 |
+| Full L3 IP Clos | **合格**。4本の eBGP Unnumbered セッションと両 leaf の IPv6 next hop による2経路 ECMP を確認。leaf1–spine1 断で両 leaf が spine2 に収束し、復旧後は2経路に戻った。各段階でホスト間の双方向 ping に成功。 |
+| OpenStack OVN BGP Service Plugin | **経路交換は合格、疎通は未達**。chassis–leaf と leaf–spine の2本の Unnumbered セッションでテナント固定 IP `10.53.0.22/32` の広告・撤回・再広告を確認した。spine からの ICMP は chassis の uplink に到着したが、CirrOS の TAP には届かなかった。 |
+| Kubernetes Cilium Full L3 BGP on the Host | **合格**。kubeadm 単一ノード上の Cilium–FRR と FRR–ToR の2本の Unnumbered セッションを確認。外部クライアントから Pod への ping と LoadBalancer VIP への HTTP に成功。両 FRR で Pod CIDR と VIP の撤回・再広告を確認した。 |
 
 両 VM の稼働中に、node3 の利用可能メモリは **5.7 GiB**、スワップ入出力カウンターはどちらも **0** だった。既存の CAPI VM は計測時に停止していた。物理構成と VM 管理手順は [共通セットアップ](common/README.md#物理ホストと-vm-の配置)、各ラボの論理構成は冒頭のディレクトリ一覧を参照。

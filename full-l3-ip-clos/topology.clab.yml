@@ -10,6 +10,8 @@ topology:
     router:
       sysctls:
         net.ipv4.ip_forward: 1
+        net.ipv6.conf.all.disable_ipv6: 0
+        net.ipv6.conf.default.disable_ipv6: 0
         net.ipv4.conf.all.rp_filter: 0
         net.ipv4.conf.default.rp_filter: 0
       binds:
@@ -24,8 +26,6 @@ topology:
       binds:
         - frr/leaf1.conf:/etc/frr/frr.conf:ro
       exec:
-        - ip addr replace 10.211.0.0/31 dev eth1
-        - ip addr replace 10.211.0.2/31 dev eth2
         - ip addr replace 10.211.1.1/24 dev eth3
     leaf2:
       kind: linux
@@ -33,25 +33,17 @@ topology:
       binds:
         - frr/leaf2.conf:/etc/frr/frr.conf:ro
       exec:
-        - ip addr replace 10.211.0.4/31 dev eth1
-        - ip addr replace 10.211.0.6/31 dev eth2
         - ip addr replace 10.211.2.1/24 dev eth3
     spine1:
       kind: linux
       group: router
       binds:
         - frr/spine1.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip addr replace 10.211.0.1/31 dev eth1
-        - ip addr replace 10.211.0.5/31 dev eth2
     spine2:
       kind: linux
       group: router
       binds:
         - frr/spine2.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip addr replace 10.211.0.3/31 dev eth1
-        - ip addr replace 10.211.0.7/31 dev eth2
     host1:
       kind: linux
       group: host

@@ -20,6 +20,7 @@ exec 9>"$state/lock"
 flock 9
 
 node=cilium-l3-node
+node_frr=clab-cilium-l3-node-frr
 tor=clab-cilium-l3-tor1
 client=clab-cilium-l3-client
 uplink=cilium-uplink
@@ -50,6 +51,7 @@ configure_forwarding() {
 up() {
   if [[ ! -f $state/owned ]]; then
     if [[ -e /etc/kubernetes/admin.conf || -e /etc/kubernetes/manifests/kube-apiserver.yaml ]] ||
+       docker container inspect "$node_frr" >/dev/null 2>&1 ||
        docker container inspect "$tor" >/dev/null 2>&1 ||
        docker container inspect "$client" >/dev/null 2>&1 ||
        ip link show "$uplink" >/dev/null 2>&1; then
@@ -82,8 +84,9 @@ up() {
     touch "$state/topology-ready"
   fi
   ip link set "$uplink" up
-  ip -4 addr replace 10.220.240.2/30 dev "$uplink"
-  ip -4 route replace "$client_network" via 10.220.240.1 dev "$uplink"
+  sysctl -w "net.ipv6.conf.$uplink.disable_ipv6=0" \
+    "net.ipv6.conf.$uplink.accept_ra=2" \
+    "net.ipv6.conf.$uplink.accept_ra_defrtr=0"
   configure_forwarding add
 
   if [[ ! -f $state/kubeadm-ready ]]; then
@@ -108,7 +111,7 @@ up() {
   fi
   kubectl label node "$node" node.kubernetes.io/exclude-from-external-load-balancers-
   helm upgrade --install cilium oci://quay.io/cilium/charts/cilium \
-    --version 1.18.17 --namespace kube-system --values cilium-values.yaml --wait --timeout 10m
+    --version 1.21.0-pre.4 --namespace kube-system --values cilium-values.yaml --wait --timeout 10m
   local crds=(
     crd/ciliumbgpadvertisements.cilium.io
     crd/ciliumbgpclusterconfigs.cilium.io
@@ -122,7 +125,37 @@ up() {
   done
   kubectl wait --for=condition=Established --timeout=120s "${crds[@]}"
   kubectl apply -f bgp.yaml -f probes.yaml
+  configure_return_route
   verify
+}
+
+configure_return_route() {
+  # Cilium advertises IPv4 routes without importing the client's subnet into Linux.
+  local gateway deadline=$((SECONDS + 60))
+  while (( SECONDS < deadline )); do
+    gateway=$(ip -6 neigh show dev "$uplink" | awk '/ router / && !/FAILED|INCOMPLETE/ {print $1; exit}')
+    if [[ -n $gateway ]]; then
+      ip -4 route replace "$client_network" via inet6 "$gateway" dev "$uplink"
+      return
+    fi
+    sleep 2
+  done
+  echo "No IPv6 router discovered on $uplink." >&2
+  return 1
+}
+
+check_peers() {
+  docker exec "$1" vtysh -c 'show bgp ipv4 unicast summary json' |
+    jq -e --argjson interfaces "$2" '
+      .peers | keys == $interfaces and all(.[]; .state == "Established" and .idType == "interface")
+    ' >/dev/null
+}
+
+check_route() {
+  docker exec "$1" ip -j -4 route show exact "$2" |
+    jq -e --arg dev "$3" '
+      any(.[]; .protocol == "bgp" and .dev == $dev and .via.family == "inet6")
+    ' >/dev/null
 }
 
 verify() {
@@ -135,16 +168,20 @@ verify() {
   pod_cidr=$(kubectl get node "$node" -o 'jsonpath={.spec.podCIDR}')
 
   deadline=$((SECONDS + 90))
-  until docker exec "$tor" ip -4 route show exact "$pod_cidr" | grep -F 'via 10.220.240.2 dev eth1' >/dev/null &&
-        docker exec "$tor" ip -4 route show exact "$vip/32" | grep -F 'via 10.220.240.2 dev eth1' >/dev/null; do
+  until check_peers "$node_frr" '["eth1","eth2"]' && check_peers "$tor" '["eth1"]' &&
+        check_route "$node_frr" "$pod_cidr" eth1 && check_route "$node_frr" "$vip/32" eth1 &&
+        check_route "$node_frr" "$client_network" eth2 &&
+        check_route "$tor" "$pod_cidr" eth1 && check_route "$tor" "$vip/32" eth1; do
     if (( SECONDS >= deadline )); then
+      docker exec "$node_frr" vtysh -c 'show bgp ipv4 unicast summary'
       docker exec "$tor" vtysh -c 'show bgp ipv4 unicast summary'
       return 1
     fi
     sleep 2
   done
 
-  ip -4 route get 10.220.240.14 | grep -F "via 10.220.240.1 dev $uplink"
+  ip -j -4 route get 10.220.240.14 |
+    jq -e --arg dev "$uplink" 'any(.[]; .dev == $dev and .via.family == "inet6")' >/dev/null
   docker exec "$client" ping -c 2 -W 2 "$pod_ip"
   docker exec "$client" wget -q -T 5 -O - "http://$vip/" | grep -Fx probe
 }

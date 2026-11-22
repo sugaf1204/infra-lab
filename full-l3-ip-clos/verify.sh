@@ -16,12 +16,12 @@ fabric_route() {
 }
 
 expect_nexthops() {
-  local router=$1 route=$2 gateways=$3
+  local router=$1 route=$2 interfaces=$3
   fabric_route "$router" "$route" |
-    jq --exit-status --argjson gateways "$gateways" '
+    jq --exit-status --argjson interfaces "$interfaces" '
       [.[] | select(.protocol == "bgp") |
-        if .nexthops then .nexthops[].gateway else .gateway end
-      ] | sort == ($gateways | sort)
+        (.nexthops // [.])[] | select(.via.family == "inet6") | .dev
+      ] | sort == ($interfaces | sort)
     ' >/dev/null
 }
 
@@ -41,7 +41,7 @@ wait_for_nexthops() {
 check_peers() {
   node "$1" vtysh -c 'show bgp ipv4 unicast summary json' |
     jq --exit-status '
-      .peers | length == 2 and all(.[]; .state == "Established")
+      .peers | length == 2 and all(.[]; .state == "Established" and .idType == "interface")
     ' >/dev/null
 }
 
@@ -55,8 +55,8 @@ case "${1:-}" in
   *) echo "Usage: $0 [--failover]" >&2; exit 2 ;;
 esac
 
-wait_for_nexthops leaf1 10.211.2.0/24 '["10.211.0.1","10.211.0.3"]'
-wait_for_nexthops leaf2 10.211.1.0/24 '["10.211.0.5","10.211.0.7"]'
+wait_for_nexthops leaf1 10.211.2.0/24 '["eth1","eth2"]'
+wait_for_nexthops leaf2 10.211.1.0/24 '["eth1","eth2"]'
 for router in leaf1 leaf2 spine1 spine2; do
   check_peers "$router"
 done
@@ -67,12 +67,12 @@ if [[ ${1:-} == --failover ]]; then
   trap 'exit 130' INT
   trap 'exit 143' TERM
   node leaf1 ip link set eth1 down
-  wait_for_nexthops leaf1 10.211.2.0/24 '["10.211.0.3"]'
-  wait_for_nexthops leaf2 10.211.1.0/24 '["10.211.0.7"]'
+  wait_for_nexthops leaf1 10.211.2.0/24 '["eth2"]'
+  wait_for_nexthops leaf2 10.211.1.0/24 '["eth2"]'
   check_traffic
   node leaf1 ip link set eth1 up
   trap - EXIT
-  wait_for_nexthops leaf1 10.211.2.0/24 '["10.211.0.1","10.211.0.3"]'
-  wait_for_nexthops leaf2 10.211.1.0/24 '["10.211.0.5","10.211.0.7"]'
+  wait_for_nexthops leaf1 10.211.2.0/24 '["eth1","eth2"]'
+  wait_for_nexthops leaf2 10.211.1.0/24 '["eth1","eth2"]'
   check_traffic
 fi

@@ -18,13 +18,10 @@ topology:
     leaf:
       binds:
         - frr/leaf.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip address replace 192.0.2.1/31 dev eth2
     spine:
       binds:
         - frr/spine.conf:/etc/frr/frr.conf:ro
       exec:
-        - ip address replace 192.0.2.0/31 dev eth1
         - ip address replace 203.0.113.10/32 dev lo
   links:
     - type: host

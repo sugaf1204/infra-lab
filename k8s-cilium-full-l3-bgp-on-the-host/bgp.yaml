@@ -18,7 +18,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumBGPPeerConfig
 metadata:
-  name: tor
+  name: node-frr
 spec:
   timers:
     connectRetryTimeSeconds: 5
@@ -34,17 +34,20 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumBGPClusterConfig
 metadata:
-  name: tor1
+  name: node-frr
 spec:
   nodeSelector:
     matchLabels:
       kubernetes.io/hostname: cilium-l3-node
   bgpInstances:
-    - name: tor1
+    - name: node-frr
       localASN: 65201
       peers:
-        - name: tor1
-          peerASN: 65101
-          peerAddress: 10.220.240.1
+        - name: node-frr
+          peerASN: 65202
+          autoDiscovery:
+            mode: Unnumbered
+            unnumbered:
+              interface: cilium-uplink
           peerConfigRef:
-            name: tor
+            name: node-frr

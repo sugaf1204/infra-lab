@@ -1,32 +1,30 @@
 # OpenStack OVN BGP Service Plugin
 
-Neutron 2026.2 の組み込み `ovn-bgp` service plugin と OVN Neutron Agent の `ovn-bgp` 拡張を有効にし、spine から CirrOS VM の固定 IP へ直接到達できるか、テナントのホスト経路を広告・撤回して検証する。Floating IP は割り当てない。OVN が Linux VRF のテーブル 42 に置いた経路を chassis の FRR が取得し、leaf、spine の順に eBGP で伝える。leaf から受信するデフォルト経路はテーブル 10 に入れ、OVN の戻り経路に使う。
+Neutron 2026.2 の組み込み `ovn-bgp` service plugin と OVN Neutron Agent の `ovn-bgp` 拡張を有効にし、spine から CirrOS VM の固定 IP へ直接到達できるか、テナントのホスト経路を広告・撤回して検証する。Floating IP は割り当てない。OVN が Linux VRF のテーブル 42 に置いた経路を chassis の FRR が取得し、leaf、spine の順に eBGP Unnumbered で伝える。ピアはリンクのインターフェース名で指定する。leaf から受信するデフォルト経路はテーブル 10 に入れ、OVN の戻り経路に使う。
 
 ## 論理構成
 
 ```mermaid
 flowchart TB
-    subgraph HOST["node3 内の libvirt VM · infra-lab-openstack"]
-        subgraph CLAB["Containerlab コンテナ"]
-            SPINE["spine · AS65233<br/>検証元 203.0.113.10"]
-            LEAF["leaf · AS65232"]
-            SPINE ---|"eBGP · 192.0.2.0/31"| LEAF
-        end
-        subgraph CHASSIS["OpenStack chassis"]
-            FRR["chassis FRR · AS65231"]
-            UPLINK["OVS br-bgp-0"]
-            VRF["Linux VRF · テーブル 42"]
-            ROUTER["bgp-lr-main / テナント Geneve ネットワーク"]
-            VRF -->|"固定 IP 10.53.0.22/32"| FRR
-            UPLINK --> ROUTER
-        end
-        subgraph GUEST["Nova が起動する CirrOS VM"]
-            VNIC["テナント NIC · 10.53.0.22"]
-        end
-        LEAF ---|"veth · ovnbgp-uplink"| UPLINK
-        FRR -.->|"eBGP unnumbered · /32 広告"| LEAF
-        ROUTER -->|"OVS / TAP · 固定 IP 宛の検証経路"| VNIC
+    subgraph CLAB["Containerlab コンテナ"]
+        SPINE["spine · AS65233<br/>検証元 203.0.113.10"]
+        LEAF["leaf · AS65232"]
+        SPINE ---|"Unnumbered · eth1 ↔ eth2"| LEAF
     end
+    subgraph CHASSIS["OpenStack chassis"]
+        FRR["chassis FRR · AS65231"]
+        UPLINK["OVS br-bgp-0"]
+        VRF["Linux VRF · テーブル 42"]
+        ROUTER["bgp-lr-main / テナント Geneve ネットワーク"]
+        VRF -->|"固定 IP 10.53.0.22/32"| FRR
+        UPLINK --> ROUTER
+    end
+    subgraph GUEST["Nova が起動する CirrOS VM"]
+        VNIC["テナント NIC · 10.53.0.22"]
+    end
+    LEAF ---|"veth · ovnbgp-uplink"| UPLINK
+    FRR -.->|"Unnumbered · br-bgp-0 ↔ eth1 · /32 広告"| LEAF
+    ROUTER -->|"OVS / TAP · 固定 IP 宛の検証経路"| VNIC
 ```
 
 ## 構築
