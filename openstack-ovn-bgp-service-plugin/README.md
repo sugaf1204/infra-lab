@@ -83,9 +83,12 @@ sudo ip route show table 42
 sudo ip route show table 10
 sudo ovs-ofctl dump-flows br-bgp-0
 sudo ./verify.sh advertised
+sudo ./verify.sh reachable
 ```
 
-`bgp-lr-main` と chassis 用 logical router が存在し、テーブル 42 と spine に `198.51.100.100/32` が現れる。テーブル 10 が leaf からのデフォルト経路を保持し、spine のループバックを送信元にした ping が CirrOS まで往復すれば合格。
+`bgp-lr-main` と chassis 用 logical router が存在し、テーブル 42 と spine に `198.51.100.100/32` が現れる。`advertised` はテーブル 42、spine の BGP RIB と Linux FIB を照合する。テーブル 10 では leaf からのデフォルト経路を確認できる。`reachable` は spine のループバックを送信元にした ping が CirrOS まで往復すれば合格。
+
+node3 の単一 chassis 構成では、FIP の BGP 広告・撤回・再広告を確認済み。実パケットは `ovnbgp-uplink` に到着したが、CirrOS の TAP には届かなかった。`ovn-trace` では `bgp-lr-main` が FIP 宛てに `bgp-lr-main-dead-lrp` を選んだ。疎通試験はこの転送上の問題を再現する。
 
 Floating IP を削除し、leaf の両 BGP セッションが Established の状態で spine から該当経路が消えることを確認する。
 
