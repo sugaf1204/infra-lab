@@ -1,0 +1,73 @@
+name: full-l3-ip-clos
+mgmt:
+  network: full-l3-ip-clos-mgmt
+  ipv4-subnet: 172.30.11.0/24
+topology:
+  kinds:
+    linux:
+      image: quay.io/frrouting/frr:10.4.1
+  groups:
+    router:
+      sysctls:
+        net.ipv4.ip_forward: 1
+        net.ipv4.conf.all.rp_filter: 0
+        net.ipv4.conf.default.rp_filter: 0
+      binds:
+        - ../common/frr/daemons:/etc/frr/daemons:ro
+    host:
+      image: alpine:3.22.1
+      cmd: sleep infinity
+  nodes:
+    leaf1:
+      kind: linux
+      group: router
+      binds:
+        - frr/leaf1.conf:/etc/frr/frr.conf:ro
+      exec:
+        - ip addr replace 10.211.0.0/31 dev eth1
+        - ip addr replace 10.211.0.2/31 dev eth2
+        - ip addr replace 10.211.1.1/24 dev eth3
+    leaf2:
+      kind: linux
+      group: router
+      binds:
+        - frr/leaf2.conf:/etc/frr/frr.conf:ro
+      exec:
+        - ip addr replace 10.211.0.4/31 dev eth1
+        - ip addr replace 10.211.0.6/31 dev eth2
+        - ip addr replace 10.211.2.1/24 dev eth3
+    spine1:
+      kind: linux
+      group: router
+      binds:
+        - frr/spine1.conf:/etc/frr/frr.conf:ro
+      exec:
+        - ip addr replace 10.211.0.1/31 dev eth1
+        - ip addr replace 10.211.0.5/31 dev eth2
+    spine2:
+      kind: linux
+      group: router
+      binds:
+        - frr/spine2.conf:/etc/frr/frr.conf:ro
+      exec:
+        - ip addr replace 10.211.0.3/31 dev eth1
+        - ip addr replace 10.211.0.7/31 dev eth2
+    host1:
+      kind: linux
+      group: host
+      exec:
+        - ip addr replace 10.211.1.2/24 dev eth1
+        - ip route replace 10.211.0.0/16 via 10.211.1.1 dev eth1
+    host2:
+      kind: linux
+      group: host
+      exec:
+        - ip addr replace 10.211.2.2/24 dev eth1
+        - ip route replace 10.211.0.0/16 via 10.211.2.1 dev eth1
+  links:
+    - endpoints: ["leaf1:eth1", "spine1:eth1"]
+    - endpoints: ["leaf1:eth2", "spine2:eth1"]
+    - endpoints: ["leaf2:eth1", "spine1:eth2"]
+    - endpoints: ["leaf2:eth2", "spine2:eth2"]
+    - endpoints: ["leaf1:eth3", "host1:eth1"]
+    - endpoints: ["leaf2:eth3", "host2:eth1"]

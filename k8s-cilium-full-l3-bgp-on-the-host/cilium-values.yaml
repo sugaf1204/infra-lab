@@ -1,0 +1,14 @@
+ipam:
+  mode: kubernetes
+routingMode: native
+ipv4NativeRoutingCIDR: 10.220.0.0/16
+autoDirectNodeRoutes: false
+enableIPv4Masquerade: true
+bpf:
+  hostLegacyRouting: true
+  masquerade: false
+bgpControlPlane:
+  enabled: true
+kubeProxyReplacement: false
+operator:
+  replicas: 1

@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-probe
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probe-control
+  namespace: lab-probe
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: cilium-l3-control-plane
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  containers:
+    - name: probe
+      image: busybox:1.37.0
+      command: ["sleep", "infinity"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probe-worker
+  namespace: lab-probe
+  labels:
+    app: probe-worker
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: cilium-l3-worker
+  containers:
+    - name: probe
+      image: busybox:1.37.0
+      command:
+        - sh
+        - -ec
+        - |
+          mkdir -p /www
+          printf 'probe-worker\n' > /www/index.html
+          exec httpd -f -p 8080 -h /www
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 8080
+---
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: lab-probe
+spec:
+  blocks:
+    - cidr: 10.220.250.10/32
+  serviceSelector:
+    matchLabels:
+      lab: cilium-l3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: probe-worker
+  namespace: lab-probe
+  labels:
+    lab: cilium-l3
+spec:
+  type: LoadBalancer
+  loadBalancerClass: io.cilium/bgp-control-plane
+  externalTrafficPolicy: Local
+  selector:
+    app: probe-worker
+  ports:
+    - port: 80
+      targetPort: 8080

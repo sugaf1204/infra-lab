@@ -1,0 +1,49 @@
+name: cilium-l3
+mgmt:
+  network: clab-cilium-l3-mgmt
+  ipv4-subnet: 172.30.13.0/24
+topology:
+  kinds:
+    linux:
+      image: quay.io/frrouting/frr:10.4.1
+  groups:
+    router:
+      sysctls:
+        net.ipv4.ip_forward: 1
+      binds:
+        - ../common/frr/daemons:/etc/frr/daemons:ro
+  nodes:
+    cilium-l3-control-plane:
+      kind: ext-container
+    cilium-l3-worker:
+      kind: ext-container
+    tor1:
+      kind: linux
+      group: router
+      binds:
+        - frr/tor1.conf:/etc/frr/frr.conf:ro
+      exec:
+        - ip addr replace 10.220.240.1/30 dev eth1
+        - ip addr replace 10.220.240.9/30 dev eth2
+        - ip addr replace 10.220.240.13/30 dev eth3
+    tor2:
+      kind: linux
+      group: router
+      binds:
+        - frr/tor2.conf:/etc/frr/frr.conf:ro
+      exec:
+        - ip addr replace 10.220.240.5/30 dev eth1
+        - ip addr replace 10.220.240.10/30 dev eth2
+    client:
+      kind: linux
+      image: alpine:3.22.1
+      cmd: sleep infinity
+      exec:
+        - ip addr replace 10.220.240.14/30 dev eth1
+        - ip route replace 10.220.0.0/20 via 10.220.240.13 dev eth1
+        - ip route replace 10.220.250.10/32 via 10.220.240.13 dev eth1
+  links:
+    - endpoints: ["cilium-l3-control-plane:eth1", "tor1:eth1"]
+    - endpoints: ["cilium-l3-worker:eth1", "tor2:eth1"]
+    - endpoints: ["tor1:eth2", "tor2:eth2"]
+    - endpoints: ["tor1:eth3", "client:eth1"]

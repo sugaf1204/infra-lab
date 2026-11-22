@@ -1,0 +1,9 @@
+clab-*/
+.lab-state/
+*.qcow2
+*.img
+*.iso
+*.kubeconfig
+.env
+local.conf
+clouds.yaml
