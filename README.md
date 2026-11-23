@@ -29,10 +29,10 @@ Kubernetes の操作は control plane で `sudo kubectl --kubeconfig /etc/kubern
 - Graphviz DOT で装置のポートと接続端を指定する。Kubernetes ノード、VM、ネットワーク名前空間、Pod は、その所属が検証に関わる箇所を枠で示す。物理ホスト名と管理 NIC は共通の配置図に載せる。
 - 実線はリンク、実線の矢印は転送方向、青の破線は BGP やルートの受け渡し、赤い終端線は実機で確認した転送の未達を示す。管理図の青い破線はホスト内の L3 転送を示す。
 - BGP Unnumbered はインターフェース名と ASN を記載する。ループバック、Pod CIDR、VIP などの試験対象はトポロジーおよび設定と照合する。実行時に生成されるインターフェース名は、名前の規則を図に記す。
-- 接続と結果を更新したら、各ディレクトリの `network.dot` を編集し、SVG を再生成して読みやすさを確認する。README は同じディレクトリの SVG を表示する。 [Graphviz のポート指定](https://graphviz.org/doc/info/shapes.html#html)
+- 接続と結果を更新したら、各ディレクトリの DOT ファイルを編集し、SVG を再生成して読みやすさを確認する。README は同じディレクトリの SVG を表示する。 [Graphviz のポート指定](https://graphviz.org/doc/info/shapes.html#html)
 
 ```bash
-for source in */network.dot; do
+for source in */network*.dot; do
   dot -Tsvg "$source" -o "${source%.dot}.svg" || exit
 done
 ```

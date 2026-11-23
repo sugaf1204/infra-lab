@@ -1,14 +1,14 @@
 # OpenStack OVN BGP Service Plugin
 
-Neutron 2026.2 の組み込み `ovn-bgp` service plugin と、2台の chassis の OVN Neutron Agent を使う。controller は Nova compute を兼ね、追加 compute はインスタンスを実行する。各 chassis の CirrOS VM は DevStack の `demo` プロジェクトが所有する非共有・内部の flat provider network に直接接続する。Neutron ルーターと Floating IP の作成は不要。図の `bgp-lr-main` はプラグインが OVN 内に作成する論理ルーター。 [Neutron 2026.2 の provider network 実装](https://github.com/openstack/neutron/blob/b82b437de7/neutron/services/bgp/commands.py#L271-L305)
+Neutron 2026.2 の組み込み `ovn-bgp` service plugin と、2台の chassis の OVN Neutron Agent を使う。controller は Nova compute を兼ね、追加 compute はインスタンスを実行する。各 chassis の CirrOS VM は DevStack の `demo` プロジェクトが所有する非共有・内部の flat provider network に直接接続する。Neutron ルーターと Floating IP の作成は不要。`bgp-lr-main` はプラグインが OVN 内に作成する論理ルーター。 [Neutron 2026.2 の provider network 実装](https://github.com/openstack/neutron/blob/b82b437de7/neutron/services/bgp/commands.py#L271-L305)
 
 ## 検証ネットワーク
 
-![2台の OpenStack chassis とそれぞれを二重化した Dual ToR](network.svg)
+![OpenStack の両 chassis が Fabric VM 上の両 ToR に直結する構成](network-direct-tor.svg)
 
-[図のソース](network.dot)
+[図のソース](network-direct-tor.dot)
 
-ToR と spine は fabric VM に置く。controller と追加 compute はそれぞれ両 ToR に独立した L2 セグメントで接続する。各 chassis 内では2つの OVS ブリッジ `br-bgp-0` と `br-bgp-1` がそれぞれ1本の uplink を収容する。
+ToR と spine は fabric VM に置く。controller と追加 compute はそれぞれ両 ToR に独立した L2 セグメントで接続する。図の `ovn-tor1` と `ovn-tor2` は追加 compute の virtio NIC。各 chassis 内では2つの OVS ブリッジ `br-bgp-0` と `br-bgp-1` がそれぞれ1本の uplink を収容する。
 
 | L2 セグメント | fabric VM の専用 NIC | ToR ポート | chassis の NIC |
 | --- | --- | --- | --- |

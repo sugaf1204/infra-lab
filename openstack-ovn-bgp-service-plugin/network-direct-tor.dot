@@ -33,7 +33,7 @@ digraph ovn_bgp {
     style=rounded; color="#94a3b8"; margin=16;
     controller_ports [shape=plain, label=<
       <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b" BGCOLOR="#eff6ff">
-        <TR><TD PORT="tor1" BGCOLOR="#dbeafe">ovn-ctl-tor1</TD><TD PORT="tor2" BGCOLOR="#dbeafe">ovn-ctl-tor2</TD></TR>
+        <TR><TD PORT="tor1" BGCOLOR="#dbeafe">ovn-ctl-tor1<BR/><FONT POINT-SIZE="9">virtio NIC</FONT></TD><TD PORT="tor2" BGCOLOR="#dbeafe">ovn-ctl-tor2<BR/><FONT POINT-SIZE="9">virtio NIC</FONT></TD></TR>
         <TR><TD>br-bgp-0</TD><TD>br-bgp-1</TD></TR>
         <TR><TD COLSPAN="2"><B>FRR · AS65231</B><BR/>lo 203.0.113.31/32</TD></TR>
       </TABLE>>];
@@ -51,7 +51,7 @@ digraph ovn_bgp {
     style=rounded; color="#94a3b8"; margin=16;
     compute_ports [shape=plain, label=<
       <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b" BGCOLOR="#eff6ff">
-        <TR><TD PORT="tor1" BGCOLOR="#dbeafe">ovn-tor1</TD><TD PORT="tor2" BGCOLOR="#dbeafe">ovn-tor2</TD></TR>
+        <TR><TD PORT="tor1" BGCOLOR="#dbeafe">ovn-tor1<BR/><FONT POINT-SIZE="9">virtio NIC</FONT></TD><TD PORT="tor2" BGCOLOR="#dbeafe">ovn-tor2<BR/><FONT POINT-SIZE="9">virtio NIC</FONT></TD></TR>
         <TR><TD>br-bgp-0</TD><TD>br-bgp-1</TD></TR>
         <TR><TD COLSPAN="2"><B>FRR · AS65235</B><BR/>lo 203.0.113.32/32</TD></TR>
       </TABLE>>];
