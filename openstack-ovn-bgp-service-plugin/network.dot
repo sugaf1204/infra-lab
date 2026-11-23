@@ -1,55 +1,75 @@
-digraph ovn {
-  graph [rankdir=TB, bgcolor="#ffffff", pad=0.2, nodesep=0.35, ranksep=0.55,
+digraph ovn_bgp {
+  graph [rankdir=TB, bgcolor="#ffffff", pad=0.2, nodesep=0.38, ranksep=0.50,
          fontname="Helvetica", newrank=true];
   node [shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#64748b",
-        fontname="Helvetica", fontcolor="#172b4d", margin="0.14,0.1"];
+        fontname="Helvetica", fontcolor="#172b4d", margin="0.14,0.10"];
   edge [color="#475569", penwidth=1.4, fontname="Helvetica",
         fontcolor="#334155", fontsize=10, arrowsize=0.7];
 
   spine [shape=plain, label=<
     <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-      <TR><TD COLSPAN="2"><B>spine</B><BR/>FRR · AS65233<BR/>lo 203.0.113.10/32</TD></TR>
+      <TR><TD COLSPAN="2"><B>spine</B><BR/>FRR · AS65233 · lo 203.0.113.10/32</TD></TR>
       <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
     </TABLE>>];
   leaf1 [shape=plain, label=<
     <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-      <TR><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
-      <TR><TD><B>leaf1 · ToR</B><BR/>FRR · AS65232</TD></TR>
-      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD></TR>
+      <TR><TD PORT="eth2" COLSPAN="2" BGCOLOR="#dbeafe">eth2</TD></TR>
+      <TR><TD COLSPAN="2"><B>leaf1 · ToR</B><BR/>FRR · AS65232</TD></TR>
+      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth3" BGCOLOR="#dbeafe">eth3</TD></TR>
     </TABLE>>];
   leaf2 [shape=plain, label=<
     <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-      <TR><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
-      <TR><TD><B>leaf2 · ToR</B><BR/>FRR · AS65234</TD></TR>
-      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD></TR>
+      <TR><TD PORT="eth2" COLSPAN="2" BGCOLOR="#dbeafe">eth2</TD></TR>
+      <TR><TD COLSPAN="2"><B>leaf2 · ToR</B><BR/>FRR · AS65234</TD></TR>
+      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth3" BGCOLOR="#dbeafe">eth3</TD></TR>
     </TABLE>>];
   {rank=same; leaf1; leaf2}
 
-  subgraph cluster_chassis {
-    label="OpenStack chassis  |  VM"; labeljust=l; labelloc=b;
+  subgraph cluster_controller {
+    label="OpenStack controller + compute VM"; labeljust=l; labelloc=b;
     style=rounded; color="#94a3b8"; margin=16;
-    ports [shape=plain, label=<
-      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-        <TR><TD PORT="up0" BGCOLOR="#dbeafe">ovnbgp-uplink</TD><TD PORT="up1" BGCOLOR="#dbeafe">ovnbgp-uplink1</TD></TR>
-        <TR><TD><B>br-bgp-0</B></TD><TD><B>br-bgp-1</B></TD></TR>
-        <TR><TD COLSPAN="2" PORT="patch" BGCOLOR="#dbeafe">OVS localnet patch ports</TD></TR>
+    controller_ports [shape=plain, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b" BGCOLOR="#eff6ff">
+        <TR><TD PORT="tor1" BGCOLOR="#dbeafe">ovnbgp-uplink</TD><TD PORT="tor2" BGCOLOR="#dbeafe">ovnbgp-uplink1</TD></TR>
+        <TR><TD>br-bgp-0</TD><TD>br-bgp-1</TD></TR>
+        <TR><TD COLSPAN="2"><B>FRR · AS65231</B><BR/>lo 203.0.113.31/32</TD></TR>
       </TABLE>>];
-    pipeline [label="OVS br-int\nOVN BGP fabric · bgp-lr-main"];
-    provider [label="br-ex + br-int patch pairs\nProject flat provider network · 10.53.0.0/24"];
-    routing [label="Chassis FRR · AS65231\nlo 203.0.113.31/32\nTable 42 exports VM /32\nTable 10 imports IPv4 default via IPv6"];
-    subgraph cluster_guest {
+    controller_ovn [label="OVN · br-int / br-ex\nTenant flat provider network"];
+    relay1 [label="clab-ovn-tor1\novn-leaf1-p2p ↔ ovn-tor1"];
+    relay2 [label="clab-ovn-tor2\novn-leaf2-p2p ↔ ovn-tor2"];
+    {rank=same; controller_ports; relay1; relay2}
+    subgraph cluster_controller_guest {
       label="CirrOS VM"; labelloc=b; color="#94a3b8"; style=rounded;
-      nic [label="Guest NIC\n10.53.0.22", fillcolor="#f0fdf4"];
+      vm1 [label="Fixed IP 10.53.0.22/32", fillcolor="#f0fdf4"];
     }
-
-    ports:patch:s -> pipeline:n [dir=none, label="  OVS patch pairs"];
-    ports:e -> routing:w [dir=none, color="#2563a5", style=dashed, constraint=false];
-    pipeline -> provider [label="  OVN forwarding"];
-    provider -> nic [dir=none, label="  br-int → compute TAP"];
-    {rank=same; ports; routing}
+    controller_ports -> controller_ovn [dir=none];
+    controller_ovn -> vm1 [dir=none, label="  compute TAP"];
   }
+
+  subgraph cluster_compute {
+    label="OpenStack compute VM"; labeljust=l; labelloc=b;
+    style=rounded; color="#94a3b8"; margin=16;
+    compute_ports [shape=plain, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b" BGCOLOR="#eff6ff">
+        <TR><TD PORT="tor1" BGCOLOR="#dbeafe">ovn-tor1</TD><TD PORT="tor2" BGCOLOR="#dbeafe">ovn-tor2</TD></TR>
+        <TR><TD>br-bgp-0</TD><TD>br-bgp-1</TD></TR>
+        <TR><TD COLSPAN="2"><B>FRR · AS65235</B><BR/>lo 203.0.113.32/32</TD></TR>
+      </TABLE>>];
+    compute_ovn [label="OVN · br-int / br-ex\nTenant flat provider network"];
+    subgraph cluster_compute_guest {
+      label="CirrOS VM"; labelloc=b; color="#94a3b8"; style=rounded;
+      vm2 [label="Fixed IP 10.53.0.23/32", fillcolor="#f0fdf4"];
+    }
+    compute_ports -> compute_ovn [dir=none];
+    compute_ovn -> vm2 [dir=none, label="  compute TAP"];
+  }
+
   spine:eth1:s -> leaf1:eth2:n [dir=none];
   spine:eth2:s -> leaf2:eth2:n [dir=none];
-  leaf1:eth1:s -> ports:up0:n [dir=none];
-  leaf2:eth1:s -> ports:up1:n [dir=none];
+  leaf1:eth1:s -> controller_ports:tor1:n [dir=none];
+  leaf2:eth1:s -> controller_ports:tor2:n [dir=none];
+  leaf1:eth3:s -> relay1:n [dir=none];
+  leaf2:eth3:s -> relay2:n [dir=none];
+  relay1:s -> compute_ports:tor1:n [dir=none, label="  private L2 · ToR 1"];
+  relay2:s -> compute_ports:tor2:n [dir=none, label="  private L2 · ToR 2"];
 }

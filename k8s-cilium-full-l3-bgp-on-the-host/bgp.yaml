@@ -34,7 +34,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumBGPClusterConfig
 metadata:
-  name: host-frr
+  name: control-plane-frr
 spec:
   nodeSelector:
     matchLabels:
@@ -45,7 +45,7 @@ spec:
       peers:
         - name: host-frr
           peerASN: 65202
-          peerAddress: 10.220.255.2
+          peerAddress: 127.0.0.1
           peerConfigRef:
             name: host-frr
 ---
@@ -58,4 +58,33 @@ spec:
     - name: host-frr
       peers:
         - name: host-frr
-          localAddress: 10.220.255.10
+          localAddress: 127.0.0.2
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPClusterConfig
+metadata:
+  name: worker-frr
+spec:
+  nodeSelector:
+    matchLabels:
+      kubernetes.io/hostname: cilium-l3-worker
+  bgpInstances:
+    - name: host-frr
+      localASN: 65201
+      peers:
+        - name: host-frr
+          peerASN: 65204
+          peerAddress: 127.0.0.1
+          peerConfigRef:
+            name: host-frr
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPNodeConfigOverride
+metadata:
+  name: cilium-l3-worker
+spec:
+  bgpInstances:
+    - name: host-frr
+      peers:
+        - name: host-frr
+          localAddress: 127.0.0.2

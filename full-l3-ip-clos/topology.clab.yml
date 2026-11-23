@@ -42,6 +42,8 @@ topology:
       kind: linux
       group: router
       network-mode: none
+      sysctls:
+        net.ipv6.conf.default.accept_ra_defrtr: 0
       binds:
         - frr/host1.conf:/etc/frr/frr.conf:ro
       exec:
@@ -50,6 +52,8 @@ topology:
       kind: linux
       group: router
       network-mode: none
+      sysctls:
+        net.ipv6.conf.default.accept_ra_defrtr: 0
       binds:
         - frr/host2.conf:/etc/frr/frr.conf:ro
       exec:

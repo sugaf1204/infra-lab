@@ -18,6 +18,10 @@ topology:
   nodes:
     infra-lab-openstack:
       kind: host
+    clab-ovn-tor1:
+      kind: bridge
+    clab-ovn-tor2:
+      kind: bridge
     leaf1:
       kind: linux
       binds:
@@ -37,3 +41,5 @@ topology:
     - endpoints: ["leaf2:eth1", "infra-lab-openstack:ovnbgp-uplink1"]
     - endpoints: ["leaf1:eth2", "spine:eth1"]
     - endpoints: ["leaf2:eth2", "spine:eth2"]
+    - endpoints: ["leaf1:eth3", "clab-ovn-tor1:ovn-leaf1-p2p"]
+    - endpoints: ["leaf2:eth3", "clab-ovn-tor2:ovn-leaf2-p2p"]

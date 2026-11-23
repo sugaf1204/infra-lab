@@ -1,6 +1,6 @@
 graph management {
-  graph [rankdir=TB, newrank=true, bgcolor="#ffffff", pad=0.2, nodesep=0.35, ranksep=0.45,
-         fontname="Helvetica"];
+  graph [rankdir=TB, newrank=true, bgcolor="#ffffff", pad=0.2, nodesep=0.35,
+         ranksep=0.45, fontname="Helvetica"];
   node [shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#64748b",
         fontname="Helvetica", fontcolor="#172b4d", margin="0.15,0.1"];
   edge [color="#475569", penwidth=1.4, fontname="Helvetica",
@@ -14,22 +14,17 @@ graph management {
     nic [label="eno1\nPhysical NIC"];
     bridge [label="br0\nHost LAN bridge"];
     nat [label="virbr0\nlibvirt default · NAT"];
-    subgraph cluster_fabric {
-      label="VM  |  infra-lab-fabric"; labelloc=b;
-      color="#94a3b8"; style=rounded;
-      fabric [label="enp1s0\nVirtio NIC"];
-    }
-    subgraph cluster_openstack {
-      label="VM  |  infra-lab-openstack"; labelloc=b;
-      color="#94a3b8"; style=rounded;
-      openstack [label="enp1s0\nVirtio NIC"];
-    }
-
+    fabric [label="VM · infra-lab-fabric\nKubernetes control plane + CLOS"];
+    worker [label="VM · infra-lab-k8s-worker\nKubernetes worker"];
+    openstack [label="VM · infra-lab-openstack\nController + compute"];
+    compute [label="VM · infra-lab-openstack-compute\nCompute"];
     nic -- bridge;
     bridge -- nat [label="  IP forwarding / NAT", style=dashed, color="#2563a5"];
-    nat -- fabric [label="vnet1"];
-    nat -- openstack [label="vnet0"];
-    {rank=same; fabric; openstack}
+    nat -- fabric;
+    nat -- worker;
+    nat -- openstack;
+    nat -- compute;
+    {rank=same; fabric; worker; openstack; compute}
   }
   admin -- lan;
   lan -- nic [label="  Ethernet"];

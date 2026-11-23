@@ -8,13 +8,15 @@ fi
 
 action=${1:-}
 case "${2:-}" in
-  fabric) name=infra-lab-fabric; ram=10240; cpus=6; disk_size=80G ;;
-  openstack) name=infra-lab-openstack; ram=16384; cpus=8; disk_size=120G ;;
-  *) echo "Usage: $0 {create|start} {fabric|openstack} [base-qcow2 ssh-public-key-file]" >&2; exit 2 ;;
+  fabric) name=infra-lab-fabric; ram=7168; cpus=6; disk_size=80G ;;
+  k8s-worker) name=infra-lab-k8s-worker; ram=3072; cpus=2; disk_size=40G ;;
+  openstack) name=infra-lab-openstack; ram=12288; cpus=8; disk_size=120G ;;
+  openstack-compute) name=infra-lab-openstack-compute; ram=4096; cpus=2; disk_size=60G ;;
+  *) echo "Usage: $0 {create|start|resize} {fabric|k8s-worker|openstack|openstack-compute} [base-qcow2 ssh-public-key-file]" >&2; exit 2 ;;
 esac
 case "$action" in
   create) [[ $# == 4 ]] ;;
-  start) [[ $# == 2 ]] ;;
+  start|resize) [[ $# == 2 ]] ;;
   *) exit 2 ;;
 esac
 
@@ -40,6 +42,23 @@ check_capacity() {
     return 1
   fi
 }
+
+if [[ $action == resize ]]; then
+  if [[ $(virsh domstate "$name") != "shut off" ]]; then
+    echo "$name を停止してから resize を実行してください。" >&2
+    exit 1
+  fi
+  desired=$((ram * 1024))
+  current_max=$(virsh dominfo "$name" | awk '/^Max memory:/ {print $3}')
+  if (( desired < current_max )); then
+    virsh setmem "$name" "$desired" --config
+    virsh setmaxmem "$name" "$desired" --config
+  else
+    virsh setmaxmem "$name" "$desired" --config
+    virsh setmem "$name" "$desired" --config
+  fi
+  exit 0
+fi
 
 if [[ $action == start ]]; then
   if [[ $(virsh domstate "$name") == running ]]; then

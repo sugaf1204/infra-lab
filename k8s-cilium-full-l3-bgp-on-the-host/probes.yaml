@@ -3,28 +3,34 @@ kind: Namespace
 metadata:
   name: lab-probe
 ---
-apiVersion: v1
-kind: Pod
+apiVersion: apps/v1
+kind: DaemonSet
 metadata:
   name: probe
   namespace: lab-probe
-  labels:
-    app: probe
 spec:
-  containers:
-    - name: probe
-      image: busybox:1.37.0
-      command:
-        - sh
-        - -ec
-        - |
-          mkdir -p /www
-          printf 'probe\n' > /www/index.html
-          exec httpd -f -p 8080 -h /www
-      readinessProbe:
-        httpGet:
-          path: /
-          port: 8080
+  selector:
+    matchLabels:
+      app: probe
+  template:
+    metadata:
+      labels:
+        app: probe
+    spec:
+      containers:
+        - name: probe
+          image: busybox:1.37.0
+          command:
+            - sh
+            - -ec
+            - |
+              mkdir -p /www
+              printf 'probe\n' > /www/index.html
+              exec httpd -f -p 8080 -h /www
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
 ---
 apiVersion: cilium.io/v2
 kind: CiliumLoadBalancerIPPool

@@ -9,10 +9,11 @@ node() {
 }
 
 fabric_route() {
-  local router=$1 prefix=$2 pid
+  local router=$1 prefix=$2 pid family=-4
+  if [[ $prefix == *:* ]]; then family=-6; fi
   pid=$(docker inspect --format '{{.State.Pid}}' "$lab_prefix-$router")
   [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
-  nsenter --target "$pid" --net ip -j -4 route show exact "$prefix"
+  nsenter --target "$pid" --net ip -j "$family" route show exact "$prefix"
 }
 
 expect_nexthops() {
@@ -20,7 +21,7 @@ expect_nexthops() {
   fabric_route "$router" "$route" |
     jq --exit-status --argjson interfaces "$interfaces" '
       [.[] | select(.protocol == "bgp") |
-        (.nexthops // [.])[] | select(.via.family == "inet6") | .dev
+        (.nexthops // [.])[] | select((.gateway // .via.host // "") | startswith("fe80:")) | .dev
       ] | sort == ($interfaces | sort)
     ' >/dev/null
 }
@@ -55,6 +56,16 @@ case "${1:-}" in
   *) echo "Usage: $0 [--failover]" >&2; exit 2 ;;
 esac
 
+check_host_routes() {
+  local interfaces=$1 host
+  for host in host1 host2; do
+    wait_for_nexthops "$host" ::/0 "$interfaces"
+    fabric_route "$host" 0.0.0.0/0 | jq -e 'length == 0' >/dev/null
+  done
+  wait_for_nexthops host1 10.211.2.2/32 "$interfaces"
+  wait_for_nexthops host2 10.211.1.2/32 "$interfaces"
+}
+
 check_dual_tor() {
   local host router
   for router in leaf1 leaf2; do
@@ -67,8 +78,8 @@ check_dual_tor() {
     wait_for_nexthops "$router" 10.211.1.2/32 '["eth1","eth2"]'
     wait_for_nexthops "$router" 10.211.2.2/32 '["eth1","eth2"]'
   done
+  check_host_routes '["eth1","eth2"]'
   for host in host1 host2; do
-    wait_for_nexthops "$host" 0.0.0.0/0 '["eth1","eth2"]'
     check_peers "$host" '["eth1","eth2"]'
   done
   check_traffic
@@ -92,9 +103,7 @@ if [[ ${1:-} == --failover ]]; then
       remaining='["eth1"]'
     fi
     set_tor_host_links "$tor" down
-    for host in host1 host2; do
-      wait_for_nexthops "$host" 0.0.0.0/0 "$remaining"
-    done
+    check_host_routes "$remaining"
     for spine in spine1 spine2; do
       wait_for_nexthops "$spine" 10.211.1.2/32 "$remaining"
       wait_for_nexthops "$spine" 10.211.2.2/32 "$remaining"

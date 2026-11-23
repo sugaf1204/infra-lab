@@ -3,54 +3,48 @@ digraph cilium {
          fontname="Helvetica", newrank=true];
   node [shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#64748b",
         fontname="Helvetica", fontcolor="#172b4d", margin="0.14,0.1"];
-  edge [color="#475569", penwidth=1.4, fontname="Helvetica", fontcolor="#334155",
-        fontsize=10, arrowsize=0.7];
+  edge [color="#475569", penwidth=1.4, fontname="Helvetica", fontsize=10];
 
-  client [shape=plain, label=<
-    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#f0fdf4">
-      <TR><TD COLSPAN="2"><B>External client</B><BR/>FRR · AS65203<BR/>lo 10.220.240.14/32</TD></TR>
-      <TR><TD PORT="eth1" BGCOLOR="#dcfce7">eth1</TD><TD PORT="eth2" BGCOLOR="#dcfce7">eth2</TD></TR>
-    </TABLE>>];
-  tor1 [shape=plain, label=<
-    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-      <TR><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
-      <TR><TD><B>tor1</B><BR/>FRR · AS65101</TD></TR>
-      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD></TR>
-    </TABLE>>];
-  tor2 [shape=plain, label=<
-    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-      <TR><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
-      <TR><TD><B>tor2</B><BR/>FRR · AS65102</TD></TR>
-      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD></TR>
-    </TABLE>>];
-  {rank=same; tor1; tor2}
-
-  subgraph cluster_node {
-    label="Kubernetes node  |  VM · single-node kubeadm"; labeljust=l; labelloc=b;
+  subgraph cluster_fabric {
+    label="Fabric VM";
     style=rounded; color="#94a3b8"; margin=16;
-    subgraph cluster_host {
-      label="Host network namespace"; labeljust=l; labelloc=b; style=rounded; color="#94a3b8";
-      edge_frr [shape=plain, label=<
-        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-          <TR><TD PORT="up1" BGCOLOR="#dbeafe">cilium-tor1</TD><TD PORT="up2" BGCOLOR="#dbeafe">cilium-tor2</TD></TR>
-          <TR><TD COLSPAN="2"><B>FRR · AS65202</B><BR/>cilium-egress VRF · table 220<BR/>IPv4 default via IPv6</TD></TR>
-        </TABLE>>];
-      local_frr [label="FRR · default VRF\nlo 10.220.255.2\nNode and Pod /32"];
-      cilium [label="Cilium BGP · AS65201\nlo 10.220.255.10\nLoadBalancer VIP /32"];
-      datapath [label="Cilium CNI + kube-proxy\nLinux routing"];
-      {rank=same; datapath; local_frr}
-      edge_frr -> datapath [dir=both, label="  Workload traffic"];
-      edge_frr -> local_frr [dir=back, style=dashed, color="#2563a5", label="  Local prefixes"];
-      local_frr -> cilium [dir=back, style=dashed, color="#2563a5", label="Numbered eBGP · lo"];
+
+    client [label="External client · AS65203\nlo 10.220.240.14/32"];
+    tor1 [label="ToR1 container · AS65101"];
+    tor2 [label="ToR2 container · AS65102"];
+    {rank=same; tor1; tor2}
+    bridge1 [label="k8s-tor1 · VirtIO"];
+    bridge2 [label="k8s-tor2 · VirtIO"];
+
+    subgraph cluster_control {
+      label="Kubernetes control plane"; labelloc=b;
+      style=rounded; color="#94a3b8"; margin=12;
+      control [label="Host FRR · AS65202\nlo 10.220.255.10/32\nVRF cilium-egress"];
+      cp_cilium [label="Cilium · AS65201\nCNI + LoadBalancer VIP"];
+      cp_pod [label="Probe Pod · eth0", fillcolor="#f0fdf4"];
+      control -> cp_cilium [dir=back, style=dashed, color="#2563a5", label="numbered eBGP\n127.0.0.2 → 127.0.0.1"];
+      cp_cilium -> cp_pod [dir=none, label="lxc… ↔ eth0 · veth"];
     }
-    subgraph cluster_pod {
-      label="Probe Pod"; labelloc=b; style=rounded; color="#94a3b8";
-      pod [label="eth0\nPod IP", fillcolor="#f0fdf4"];
-    }
-    datapath -> pod [dir=none, label="  lxc… ↔ eth0 · veth"];
+
+    client -> tor1 [dir=none, label="eth1 ↔ eth2"];
+    client -> tor2 [dir=none, label="eth2 ↔ eth2"];
+    tor1 -> control [dir=none, label="eth1 ↔ cilium-tor1"];
+    tor2 -> control [dir=none, label="eth1 ↔ cilium-tor2"];
+    tor1 -> bridge1 [dir=none, label="eth3 · MACVLAN"];
+    tor2 -> bridge2 [dir=none, label="eth3 · MACVLAN"];
+    {rank=same; bridge1; bridge2; control}
   }
-  client:eth1:s -> tor1:eth2:n [dir=none];
-  client:eth2:s -> tor2:eth2:n [dir=none];
-  tor1:eth1:s -> edge_frr:up1:n [dir=none];
-  tor2:eth1:s -> edge_frr:up2:n [dir=none];
+
+  subgraph cluster_worker {
+    label="Kubernetes worker VM"; labelloc=b;
+    style=rounded; color="#94a3b8"; margin=16;
+    worker [label="Host FRR · AS65204\nlo 10.220.255.11/32\nVRF cilium-egress"];
+    wk_cilium [label="Cilium · AS65201\nCNI + LoadBalancer VIP"];
+    wk_pod [label="Probe Pod · eth0", fillcolor="#f0fdf4"];
+    worker -> wk_cilium [dir=back, style=dashed, color="#2563a5", label="numbered eBGP\n127.0.0.2 → 127.0.0.1"];
+    wk_cilium -> wk_pod [dir=none, label="lxc… ↔ eth0 · veth"];
+  }
+
+  bridge1 -> worker [dir=none, label="worker k8s-tor1\nL2 segment 1"];
+  bridge2 -> worker [dir=none, label="worker k8s-tor2\nL2 segment 2"];
 }
