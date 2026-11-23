@@ -13,18 +13,20 @@ graph management {
     color="#94a3b8"; style=rounded; margin=16;
     nic [label="eno1\nPhysical NIC"];
     bridge [label="br0\nHost LAN bridge"];
-    nat [label="virbr0\nlibvirt default · NAT"];
-    fabric [label="VM · infra-lab-fabric\nKubernetes control plane + CLOS\nOpenStack fabric"];
+    nat [label="virbr0\nlibvirt default · static management"];
+    fabric [label="VM · infra-lab-switches\nContainerlab fabric"];
+    control [label="VM · infra-lab-k8s-control\nKubernetes control plane"];
     worker [label="VM · infra-lab-k8s-worker\nKubernetes worker"];
     openstack [label="VM · infra-lab-openstack\nController + compute"];
     compute [label="VM · infra-lab-openstack-compute\nCompute"];
     nic -- bridge;
-    bridge -- nat [label="  IP forwarding / NAT", style=dashed, color="#2563a5"];
+    bridge -- nat [label="  SSH from node3", style=dashed, color="#2563a5"];
     nat -- fabric;
+    nat -- control;
     nat -- worker;
     nat -- openstack;
     nat -- compute;
-    {rank=same; fabric; worker; openstack; compute}
+    {rank=same; fabric; control; worker; openstack; compute}
   }
   admin -- lan;
   lan -- nic [label="  Ethernet"];

@@ -8,11 +8,12 @@ fi
 
 action=${1:-}
 case "${2:-}" in
-  fabric) name=infra-lab-fabric; ram=7168; cpus=6; disk_size=80G ;;
-  k8s-worker) name=infra-lab-k8s-worker; ram=3072; cpus=2; disk_size=40G ;;
-  openstack) name=infra-lab-openstack; ram=12288; cpus=8; disk_size=120G ;;
-  openstack-compute) name=infra-lab-openstack-compute; ram=4096; cpus=2; disk_size=60G ;;
-  *) echo "Usage: $0 {create|start|resize} {fabric|k8s-worker|openstack|openstack-compute} [base-qcow2 ssh-public-key-file]" >&2; exit 2 ;;
+  fabric) name=infra-lab-switches; ram=1536; cpus=2; disk_size=16G; address=192.168.122.250; mac=52:54:00:33:00:01 ;;
+  k8s-control) name=infra-lab-k8s-control; ram=5120; cpus=6; disk_size=80G; address=192.168.122.219; mac=52:54:00:33:00:02 ;;
+  k8s-worker) name=infra-lab-k8s-worker; ram=3072; cpus=2; disk_size=40G; address=192.168.122.7; mac=52:54:00:33:00:03 ;;
+  openstack) name=infra-lab-openstack; ram=12288; cpus=8; disk_size=120G; address=192.168.122.119; mac=52:54:00:33:00:04 ;;
+  openstack-compute) name=infra-lab-openstack-compute; ram=4096; cpus=2; disk_size=60G; address=192.168.122.99; mac=52:54:00:33:00:05 ;;
+  *) echo "Usage: $0 {create|start|resize} {fabric|k8s-control|k8s-worker|openstack|openstack-compute} [base-qcow2 ssh-public-key-file]" >&2; exit 2 ;;
 esac
 case "$action" in
   create) [[ $# == 4 ]] ;;
@@ -85,9 +86,13 @@ read -r key_type key_data _ < "$4"
 image_dir="/var/lib/libvirt/images/$name"
 mkdir -m 0755 "$image_dir"
 seed_config=
+network_config=
 cleanup() {
   if [[ -n $seed_config ]]; then
     rm -f "$seed_config"
+  fi
+  if [[ -n $network_config ]]; then
+    rm -f "$network_config"
   fi
   if ! virsh dominfo "$name" >/dev/null 2>&1; then
     rm -f "$image_dir/root.qcow2" "$image_dir/seed.iso"
@@ -99,11 +104,23 @@ trap cleanup EXIT
 qemu-img convert -f qcow2 -O qcow2 "$base" "$image_dir/root.qcow2"
 qemu-img resize "$image_dir/root.qcow2" "$disk_size"
 seed_config=$(mktemp)
+network_config=$(mktemp)
 printf '#cloud-config\nhostname: %s\nssh_pwauth: false\nssh_authorized_keys:\n  - %s\n' "$name" "$key_type $key_data" > "$seed_config"
-cloud-localds "$image_dir/seed.iso" "$seed_config"
+cat > "$network_config" <<EOF
+version: 2
+ethernets:
+  management:
+    match:
+      macaddress: "$mac"
+    addresses: [$address/24]
+    dhcp4: false
+    dhcp6: false
+    accept-ra: false
+EOF
+cloud-localds --network-config="$network_config" "$image_dir/seed.iso" "$seed_config"
 virt-install --connect qemu:///system --name "$name" --import \
   --virt-type kvm --cpu host-passthrough --vcpus "$cpus" --memory "$ram" \
   --os-variant ubuntu22.04 --boot uefi \
   --disk "path=$image_dir/root.qcow2,bus=virtio,format=qcow2" \
   --disk "path=$image_dir/seed.iso,device=cdrom,readonly=on" \
-  --network network=default,model=virtio --graphics none --noautoconsole
+  --network "network=default,model=virtio,mac=$mac" --graphics none --noautoconsole
