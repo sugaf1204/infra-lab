@@ -237,12 +237,12 @@ join() {
 
   local attempt
   for ((attempt = 0; attempt < 45; attempt++)); do
-    if check_routes '["k8s-tor1","k8s-tor2"]' ip -j -4 route show exact "$control_ip/32"; then
+    if check_default '["k8s-tor1","k8s-tor2"]' ip; then
       break
     fi
     sleep 2
   done
-  check_routes '["k8s-tor1","k8s-tor2"]' ip -j -4 route show exact "$control_ip/32"
+  check_default '["k8s-tor1","k8s-tor2"]' ip
 
   local join_file=$state/join.yaml
   trap 'rm -f "$state/join.yaml"' EXIT
@@ -296,7 +296,7 @@ verify_node() {
       and all(["k8s-tor1","k8s-tor2"][]; $p[.].state == "Established" and $p[.].idType == "interface")
     ' >/dev/null
   check_default '["k8s-tor1","k8s-tor2"]' ip
-  check_routes '["k8s-tor1","k8s-tor2"]' ip -j -4 route show exact "$other_ip/32"
+  ip -j -4 route get fibmatch "$other_ip" | jq -e '.[0].dst == "default"' >/dev/null
   ping -c 2 -W 2 "$other_ip"
   ping -c 2 -W 2 "$client_ip"
 }

@@ -5,8 +5,6 @@ ip prefix-list NODE-LOOPBACK permit @NODE_IP@/32
 ip prefix-list PODS permit 10.220.0.0/20 ge 32
 ip prefix-list VIPS permit 10.220.250.0/24 ge 32
 ip prefix-list FABRIC permit 0.0.0.0/0
-ip prefix-list FABRIC permit 10.220.0.0/20 ge 32
-ip prefix-list FABRIC permit 10.220.255.10/31 ge 32
 ip prefix-list EXPORT permit 10.220.0.0/20 ge 32
 ip prefix-list EXPORT permit 10.220.250.0/24 ge 32
 ip prefix-list EXPORT permit @NODE_IP@/32
