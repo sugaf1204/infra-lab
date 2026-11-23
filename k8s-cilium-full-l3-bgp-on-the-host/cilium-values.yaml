@@ -1,4 +1,4 @@
-k8sServiceHost: 10.220.255.10
+k8sServiceHost: cilium-l3-control-plane
 k8sServicePort: 6443
 ipam:
   mode: kubernetes
@@ -14,9 +14,18 @@ bpf:
 bgpControlPlane:
   enabled: true
 kubeProxyReplacement: true
+socketLB:
+  enabled: false
 devices: "k8s-tor+,lo"
 nodePort:
   directRoutingDevice: "lo"
 rollOutCiliumPods: true
+image:
+  useDigest: false
+envoy:
+  image:
+    useDigest: false
 operator:
   replicas: 1
+  image:
+    useDigest: false

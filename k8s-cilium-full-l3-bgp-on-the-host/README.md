@@ -1,56 +1,40 @@
 # Kubernetes Cilium Full L3 BGP on the Host
 
-kubeadm の control plane と worker を別々の VM で動かす。`kube-proxy` は廃止し、Cilium の `kubeProxyReplacement: true` で Service 転送を行う。両ノードを2台の ToR に接続し、ノード IP はそれぞれのループバックに IPv4 /32 で1つ割り当てる。ホスト FRR は各ノード OS の systemd サービス（`frr` パッケージ）として直接動かし、Kubernetes ノード上には Docker や余分なブリッジ（`docker0` 等）を作成しない。各ノードの Cilium とホスト FRR の間は Cilium の `127.0.0.2` から FRR の `127.0.0.1` への接続で numbered eBGP を張る。ホスト FRR 側で `local-as 65200 no-prepend replace-as` を設定することで、全ノード共通の1つの `CiliumBGPClusterConfig` でピアを張る。
+Kind（Kubernetes in Docker）の 2 ノードクラスタ（`cilium-l3-control-plane` / `cilium-l3-worker`）と Containerlab の FRR 10.4.1 コンテナを組み合わせ、1 台の専用 Linux VM 上で Full L3 IP CLOS + BGP on the Host を検証する。`kube-proxy` は廃止（`kubeProxyMode: none` + Cilium `kubeProxyReplacement: true`）する。
 
-## 実機検証結果（2026-11-23）
+Cilium 公式の `contrib/containerlab/service` 構成を参考に、各 Kind ノードと同じネットワーク名前空間（`network-mode: container:<kind-node>`）で FRR 10.4.1 コンテナ（`node0` / `node1`）を動かし、ToR（`tor1` / `tor2`）および外部クライアント（`client`）を含めた全 5 ノード・全 6 リンクを [topology.clab.yml](topology.clab.yml) に一元記述する。
 
-Ubuntu 24.04.5 の control plane（`infra-lab-k8s-control`）と worker（`infra-lab-k8s-worker`）、および fabric VM（`infra-lab-switches`、Containerlab 0.83.0 / FRR 10.4.1）で全検証を通過した。
+## 実機検証結果（2026-11-24）
 
-- **冪等性・ホスト構成**: 両ノードで `host.yml` の Ansible 再実行は `changed=0 failed=0`、`lab.sh up` の再実行も正常完了した。両ノードの `lo` はそれぞれ `10.220.255.10/32`・`10.220.255.11/32`、IPv4 main table のデフォルト経路は IPv6 リンクローカル 2-way ECMP（`src` 自ノード IP）、VRF・ブリッジ（`docker0` 等）は不在、`net.ipv4.fib_multipath_hash_policy=1` を確認した。
-- **FRR と Cilium の実機知見**:
-  - Ubuntu 24.04 標準の FRR 8.4.4 では Cilium が作成する `proto kernel` の Pod `/32` ルートが zebra に取り込まれなかったため、`install-tools.sh` で FRRouting 公式リポジトリ（`frr-10`、検証時は `10.7.1`）を導入する構成とした。これにより不要な `/32` の漏洩なく Node IP・Pod `/32`・VIP `/32` のみが BGP 広告されることを確認した。
-  - BGP Unnumbered 環境では `k8s-tor1` / `k8s-tor2` に IPv4 アドレスが付かないため、Cilium の `kubeProxyReplacement: true` で BPF を正しくアタッチするには `cilium-values.yaml` に `devices: "k8s-tor+,lo"` と `nodePort.directRoutingDevice: "lo"` の明示が必要だった。
-- **疎通・障害復旧**:
-  - control plane の `sudo ./verify.sh cluster`（`kube-proxy` DaemonSet 不在、ノード間・外部クライアント疎通、両 Pod → 外部クライアント疎通、Pod 間双方向疎通）が終了コード 0 で通過した。
-  - worker の `sudo ./verify.sh node`（ローカル BGP 3セッション Established、デフォルト ECMP、VRF/ブリッジ不在、疎通）が終了コード 0 で通過した。
-  - fabric VM の `sudo ./verify.sh fabric --failover`（両 ToR での VIP `10.220.250.10/32` 2-way ECMP、正常時・`tor1` 片系断・復旧・`tor2` 片系断・復旧での両ノード ping と `http://10.220.250.10/` の `probe` 応答）が終了コード 0 で通過した。
+Ubuntu 24.04.5（`infra-lab-k8s-control`、Docker 29.1.3 / Containerlab 0.83.0 / Kind v0.27.0 / FRR 10.4.1 / Cilium 1.21.0-pre.4）で全検証を通過した。
 
-## 検証ネットワーク
+- **トポロジー・冪等性**: `common/render-fabric.yml` で全 5 ノードの FRR 設定を生成（再実行は `changed=0 failed=0`）。`lab.sh up`（27行）で Kind クラスタ・Containerlab トポロジー・Cilium・BGP/probe マニフェストを一括展開できた。
+- **疎通・障害復旧**: `sudo ./verify.sh --failover` が終了コード 0 で通過した。
+  - `kube-proxy` DaemonSet 不在、両ノードの `lo` `/32`（`10.220.255.10/32`・`10.220.255.11/32`）、BGP 3 セッション（`k8s-tor1` / `k8s-tor2` / Cilium `127.0.0.2`）Established、IPv4 デフォルトの IPv6 リンクローカル 2-way ECMP を確認。
+  - ノード間・Pod 間双方向・両 Pod → 外部クライアント（`10.220.240.14`）の疎通を確認。
+  - 両 ToR での LoadBalancer VIP（`10.220.250.10/32`）2-way ECMP、正常時・`tor1` 片系断・復旧・`tor2` 片系断・復旧のすべてで、外部クライアントからの両ノード ping（全損失 0%）と `http://10.220.250.10/` の `probe` 応答を確認。
+- **実機知見**:
+  - BGP Unnumbered 環境で Cilium KPR を有効にするため、[cilium-values.yaml](cilium-values.yaml) に `devices: "k8s-tor+,lo"`・`nodePort.directRoutingDevice: "lo"`・`socketLB.enabled: false` を設定し、[topology.clab.yml](topology.clab.yml) でデータ NIC の `rp_filter=0` と `fib_multipath_hash_policy=1` を有効化している。
 
-![Fabric VM と同じ階層にある2台の Kubernetes VM を Dual ToR に接続する](network.svg)
+## 構成ファイル
 
-[図のソース](network.dot)
-
-control plane と worker はそれぞれ独立した VM。各ノードは `k8s-tor1` と `k8s-tor2` を独立した L3 インターフェースとして使う。両リンクで `remote-as external` を用いたインターフェース指定の eBGP Unnumbered を張る。ノードのループバックは control plane が `10.220.255.10/32`、worker が `10.220.255.11/32`。
-
-- Cilium は同じノードの FRR に `127.0.0.2` → `127.0.0.1` でピアを張り、LoadBalancer IP を広告する。ホスト FRR は Node IP と Cilium がカーネルに設定した Pod /32 を両 ToR に広告する。FRR 設定には自ノードのループバック IP 以外の IP や CIDR を記述しない。
-- ToR は各ノードに IPv4 デフォルトのみを広告し、ノードの Node IP、Pod IP、VIP をホストルート (/32) として受け付ける。ToR は特定の Node IP や Pod CIDR に依存しない。ノードのメイン経路表で `0.0.0.0/0` の next hop が IPv6 リンクローカルになり、対向ノードや外部クライアント `10.220.240.14` をデフォルト経路で引くことを確認する。VRF、余分なブリッジ、静的デフォルト、DHCP、kube-proxy は使わない。また全ノード・ToR で `net.ipv4.fib_multipath_hash_policy=1`（L4 ハッシュ）を有効化する。
-
-## 環境に入る
-
-管理端末から fabric は `ssh -J node3 ubuntu@192.168.122.250`、control plane は `ssh -J node3 ubuntu@192.168.122.219`、worker は `ssh -J node3 ubuntu@192.168.122.7`。 [共通セットアップ](../common/README.md)
+- [cluster.yaml](cluster.yaml): Kind 2 ノードクラスタ定義（`disableDefaultCNI: true`, `kubeProxyMode: none`, 各ノード `node-ip`）
+- [nodes.yml](nodes.yml) + `frr/*.conf.j2`: 全 5 ノード（`tor1`, `tor2`, `client`, `node0`, `node1`）の ASN・IP と FRR テンプレート
+- [topology.clab.yml](topology.clab.yml): ToR・client・Kind ノード相乗り FRR（`node0`/`node1`）と全 6 リンクの定義
+- [cilium-values.yaml](cilium-values.yaml) / [bgp.yaml](bgp.yaml) / [probes.yaml](probes.yaml): Cilium・BGP Control Plane・検証ワークロード定義
 
 ## 構築と検証
 
-[共通セットアップ](../common/README.md)で3台の VM とデータリンクを用意する。Docker と Containerlab の導入は fabric VM のみでよい。両 Kubernetes ノードで `./install-tools.sh` を実行して `containerd`、`frr`、`kubelet`、`kubeadm`、`kubectl`、`helm` を導入する。構築時には kubeadm・Cilium・検証 Pod 用イメージと Helm チャートを管理経由で取得できるようにする。ラボは Kubernetes v1.34 系、Cilium 1.21.0-pre.4、containerd 2.x を使う。 [Cilium 1.21.0-pre.4](https://github.com/cilium/cilium/releases/tag/v1.21.0-pre.4)
+[共通セットアップ](../common/README.md)（Docker / Containerlab / Ansible / FRR 10.4.1 イメージ）後、このディレクトリで `./install-tools.sh` を実行して `kind`・`kubectl`・`helm` を導入する。
 
 ```bash
-# fabric
-sudo ./lab.sh fabric-up
-# control plane
 sudo ./lab.sh up
+sudo ./verify.sh
+sudo ./verify.sh --failover
 ```
-
-管理端末で join 設定を標準入力で worker に渡す。両ノードに同じリポジトリを `~/infra-lab` に配置した例。
-
-```bash
-set -o pipefail
-ssh -J node3 ubuntu@192.168.122.219   'cd ~/infra-lab/k8s-cilium-full-l3-bgp-on-the-host && sudo -n ./lab.sh join-config' |
-ssh -J node3 ubuntu@192.168.122.7   'cd ~/infra-lab/k8s-cilium-full-l3-bgp-on-the-host && sudo -n ./lab.sh join'
-```
-
-control plane で `sudo ./verify.sh cluster` を実行し、`kube-proxy` 不在・Pod 間の双方向疎通・両 Pod から外部クライアントへデフォルト経路を使った通信を確認する。worker の `sudo ./verify.sh node` は、ローカルの BGP セッション、FIB、VRF/ブリッジ不在を確認する。fabric の `sudo ./verify.sh fabric --failover` は各 ToR を片方ずつ停止して、ToR 上の Service VIP 向け 2-way ECMP とクライアントから両ノード・Service VIP への疎通を確認する。
 
 ## 撤去
 
-worker、control plane の順に `sudo ./lab.sh down` を実行する。最後に fabric で `sudo ./lab.sh fabric-down` を実行する。
+```bash
+sudo ./lab.sh down
+```

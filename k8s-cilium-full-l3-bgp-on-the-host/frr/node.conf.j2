@@ -1,6 +1,9 @@
 ! データセンター向けプロファイル（BGP 設定やタイマーの最適化）
 frr defaults datacenter
-hostname cilium-host-frr
+hostname {{ node.name }}
+!
+interface lo
+ ip address {{ node.address }}/32
 !
 ! --- プレフィックスリスト（経路フィルタ） ---
 ! 自ノードのループバック IP のみを許可

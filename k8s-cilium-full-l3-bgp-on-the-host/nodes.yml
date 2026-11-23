@@ -11,3 +11,11 @@ fabric_nodes:
     role: tor
     address: 10.220.255.3
     asn: 65102
+  - name: node0
+    role: node
+    address: 10.220.255.10
+    asn: 65202
+  - name: node1
+    role: node
+    address: 10.220.255.11
+    asn: 65204

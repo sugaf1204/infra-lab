@@ -1,0 +1,24 @@
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+name: cilium-l3
+networking:
+  disableDefaultCNI: true
+  kubeProxyMode: none
+  podSubnet: "10.220.0.0/20"
+  serviceSubnet: "10.221.0.0/16"
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          taints: []
+          kubeletExtraArgs:
+            node-ip: "10.220.255.10"
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-ip: "10.220.255.11"

@@ -57,11 +57,11 @@ spec:
           peerConfigRef:
             name: host-frr
 ---
-# control plane ノード（cilium-l3-node）用の送信元アドレス（127.0.0.2）オーバーライド
+# control plane ノード（cilium-l3-control-plane）用の送信元アドレス（127.0.0.2）オーバーライド
 apiVersion: cilium.io/v2
 kind: CiliumBGPNodeConfigOverride
 metadata:
-  name: cilium-l3-node
+  name: cilium-l3-control-plane
 spec:
   bgpInstances:
     - name: host-frr
