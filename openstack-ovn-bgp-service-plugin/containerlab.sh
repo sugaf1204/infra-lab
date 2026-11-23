@@ -18,7 +18,7 @@ fabric_nics() {
 
 current_host=$(hostname -s)
 case "$current_host:$1" in
-  infra-lab-fabric:deploy)
+  infra-lab-switches:deploy)
     for port in ovn-ctl-tor1 ovn-ctl-tor2 ovn-tor1 ovn-tor2; do
       ip link show "$port" >/dev/null
     done
@@ -26,29 +26,36 @@ case "$current_host:$1" in
     fabric_nics attach
     exit 0
     ;;
-  infra-lab-fabric:destroy)
+  infra-lab-switches:destroy)
     fabric_nics detach
     exec containerlab destroy --cleanup -t topology.clab.yml
     ;;
   infra-lab-openstack:configure|infra-lab-openstack:destroy)
     node_ip=203.0.113.31/32
-    uplinks=(ovn-ctl-tor1 ovn-ctl-tor2)
-    frr_config=frr/chassis.conf
+    node_asn=65231
     ;;
   infra-lab-openstack-compute:configure|infra-lab-openstack-compute:destroy)
     node_ip=203.0.113.32/32
-    uplinks=(ovn-tor1 ovn-tor2)
-    frr_config=frr/compute.conf
+    node_asn=65235
     ;;
   *)
-    echo 'Deploy the fabric on infra-lab-fabric and configure on each OpenStack chassis.' >&2
+    echo 'Deploy the fabric on infra-lab-switches and configure on each OpenStack chassis.' >&2
     exit 2
     ;;
 esac
 
 bridges=(br-bgp-0 br-bgp-1)
+uplinks=(ovn-tor1 ovn-tor2)
+
+remove_legacy_ports() {
+  local index
+  for index in "${!uplinks[@]}"; do
+    ovs-vsctl --if-exists del-port "${bridges[index]}" "ovn-ctl-tor$((index + 1))"
+  done
+}
 
 if [[ $1 == destroy ]]; then
+  if [[ $current_host == infra-lab-openstack ]]; then remove_legacy_ports; fi
   for index in "${!uplinks[@]}"; do
     ovs-vsctl --if-exists del-port "${bridges[index]}" "${uplinks[index]}"
   done
@@ -56,6 +63,13 @@ if [[ $1 == destroy ]]; then
   ip -4 rule del pref 10110 from "$node_ip" lookup 10 2>/dev/null || true
   ip -4 address del "$node_ip" dev lo 2>/dev/null || true
   exit 0
+fi
+
+# Migrate a controller provisioned before chassis NIC names were unified.
+if [[ $current_host == infra-lab-openstack ]] &&
+   { ip link show ovn-ctl-tor1 >/dev/null 2>&1 || ip link show ovn-ctl-tor2 >/dev/null 2>&1; }; then
+  remove_legacy_ports
+  ../common/links.sh name openstack
 fi
 
 for uplink in "${uplinks[@]}"; do ip link show "$uplink" >/dev/null; done
@@ -89,5 +103,9 @@ if [[ -z $(ip -4 rule show pref 10111) ]]; then
   ip -4 rule add pref 10111 from "$node_ip" unreachable
 fi
 sed -i 's/^bgpd=no$/bgpd=yes/' /etc/frr/daemons
+frr_config=$(mktemp)
+trap 'rm -f "$frr_config"' EXIT
+sed -e "s/@HOSTNAME@/$current_host/g" -e "s/@ASN@/$node_asn/g" \
+  -e "s/@NODE_IP@/${node_ip%/*}/g" frr/chassis.conf.in > "$frr_config"
 install -o frr -g frr -m 640 "$frr_config" /etc/frr/frr.conf
 systemctl restart frr

@@ -50,8 +50,9 @@ fi
 
 cd "$stack_dir"
 if [[ ! -e local.conf ]]; then
-  host_ip=$(ip -4 route get "${controller_ip:-1.1.1.1}" | awk '{for (i=1; i<NF; i++) if ($i=="src") {print $(i+1); exit}}')
-  [[ -n $host_ip ]]
+  management_nic=${MANAGEMENT_NIC:-enp1s0}
+  host_ip=$(ip -j -4 address show dev "$management_nic" |
+    jq -er '[.[].addr_info[] | select(.scope == "global") | .local] | select(length == 1) | .[0]')
   if [[ -z ${controller_ip:-} ]]; then
     shared_password=$(openssl rand -hex 16)
   fi

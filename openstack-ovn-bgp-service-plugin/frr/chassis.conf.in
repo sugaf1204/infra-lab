@@ -1,0 +1,63 @@
+frr defaults traditional
+hostname @HOSTNAME@
+!
+ip prefix-list FABRIC-DEFAULT permit 0.0.0.0/0
+ip prefix-list HOST-ROUTES permit 0.0.0.0/0 ge 32
+bgp community-list standard CHASSIS-HOSTS permit 65233:42
+!
+route-map TAG-CHASSIS-HOST permit 10
+ match ip address prefix-list HOST-ROUTES
+ set community 65233:42 additive
+!
+route-map EXPORT-CHASSIS-HOST permit 10
+ match community CHASSIS-HOSTS
+!
+route-map INSTALL-DEFAULT permit 10
+ match ip address prefix-list FABRIC-DEFAULT
+!
+! Keep BGP routes out of the VM management routing table.
+route-map KEEP-MANAGEMENT deny 10
+!
+ip protocol bgp route-map KEEP-MANAGEMENT
+!
+vrf ovnvrf10
+ ip protocol bgp route-map INSTALL-DEFAULT
+exit-vrf
+!
+router bgp @ASN@ vrf ovnvrf10
+ bgp router-id @NODE_IP@
+ bgp bestpath as-path multipath-relax
+ address-family ipv4 unicast
+  import vrf default
+  maximum-paths 2
+ exit-address-family
+!
+router bgp @ASN@ vrf ovnvrf42
+ bgp router-id @NODE_IP@
+ address-family ipv4 unicast
+  redistribute kernel route-map TAG-CHASSIS-HOST
+ exit-address-family
+!
+router bgp @ASN@
+ bgp router-id @NODE_IP@
+ no bgp default ipv4-unicast
+ bgp bestpath as-path multipath-relax
+ no bgp ebgp-requires-policy
+ neighbor br-bgp-0 interface remote-as 65232
+ neighbor br-bgp-0 timers 3 9
+ neighbor br-bgp-1 interface remote-as 65234
+ neighbor br-bgp-1 timers 3 9
+ !
+ address-family ipv4 unicast
+  import vrf ovnvrf42
+  network @NODE_IP@/32 route-map TAG-CHASSIS-HOST
+  maximum-paths 2
+  neighbor br-bgp-0 activate
+  neighbor br-bgp-0 prefix-list FABRIC-DEFAULT in
+  neighbor br-bgp-0 send-community standard
+  neighbor br-bgp-0 route-map EXPORT-CHASSIS-HOST out
+  neighbor br-bgp-1 activate
+  neighbor br-bgp-1 prefix-list FABRIC-DEFAULT in
+  neighbor br-bgp-1 send-community standard
+  neighbor br-bgp-1 route-map EXPORT-CHASSIS-HOST out
+ exit-address-family

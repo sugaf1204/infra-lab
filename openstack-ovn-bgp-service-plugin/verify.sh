@@ -25,15 +25,7 @@ check_fib() {
   shift
   "$@" | jq -e --argjson interfaces "$interfaces" '
     [.[] | select(.protocol == "bgp") | (.nexthops // [.])[] |
-      select(.via.family == "inet6") | .dev] | sort == ($interfaces | sort)
-  ' >/dev/null
-}
-
-check_ipv6_default() {
-  local interfaces=$1
-  ip -j -6 route show table 10 default | jq -e --argjson interfaces "$interfaces" '
-    [.[] | select(.protocol == "bgp") | (.nexthops // [.])[] |
-      select((.gateway // .via.host // "") | ascii_downcase | startswith("fe80:")) | .dev
+      select(.via.family == "inet6" and ((.via.host // "") | startswith("fe80:"))) | .dev
     ] | sort == ($interfaces | sort)
   ' >/dev/null
 }
@@ -42,9 +34,9 @@ check_chassis() {
   local node_ip=$1 fixed_ip=$2 bridges=$3
   ip -j -4 address show dev lo | jq -e --arg ip "$node_ip" \
     'any(.[].addr_info[]; .local == $ip and .prefixlen == 32)' >/dev/null || return 1
-  check_ipv6_default "$bridges" || return 1
-  check_fib "$bridges" ip -j -4 route show table 10 exact "$probe/32" || return 1
-  ip -j -4 route show table 10 default | jq -e 'length == 0' >/dev/null || return 1
+  check_fib "$bridges" ip -j -4 route show table 10 exact 0.0.0.0/0 || return 1
+  ip -j -4 route get fibmatch "$probe" from "$node_ip" |
+    jq -e '.[0].dst == "default" and .[0].protocol == "bgp"' >/dev/null || return 1
   if [[ $check == withdrawn && $withdraw_ip == "$fixed_ip" ]]; then
     ip -j -4 route show table 42 exact "$fixed_ip/32" |
       jq -e 'length == 0' >/dev/null
@@ -112,7 +104,7 @@ if [[ $check == chassis ]]; then
     *) echo 'Run chassis verification on an OpenStack lab VM.' >&2; exit 2 ;;
   esac
   check_chassis "${node_ips[chassis_index]}" "${fixed_ips[chassis_index]}" '["br-bgp-0","br-bgp-1"]'
-  printf 'Chassis %s has dual IPv6 link-local defaults and a local OVN host route for %s\n' \
+  printf 'Chassis %s has an IPv4 default via both IPv6 link-local next hops and a local OVN host route for %s\n' \
     "${node_ips[chassis_index]}" "${fixed_ips[chassis_index]}"
   exit 0
 fi
