@@ -14,5 +14,9 @@ bpf:
 bgpControlPlane:
   enabled: true
 kubeProxyReplacement: true
+devices: "k8s-tor+,lo"
+nodePort:
+  directRoutingDevice: "lo"
+rollOutCiliumPods: true
 operator:
   replicas: 1

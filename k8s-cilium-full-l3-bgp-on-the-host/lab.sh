@@ -27,8 +27,8 @@ worker_ip=10.220.255.11
 uplinks=(k8s-tor1 k8s-tor2)
 case "$(hostname -s)" in
   infra-lab-switches) role=fabric ;;
-  infra-lab-k8s-control) role=control-plane; node=$control_node; node_ip=$control_ip; asn=65202 ;;
-  infra-lab-k8s-worker) role=worker; node=$worker_node; node_ip=$worker_ip; asn=65204 ;;
+  infra-lab-k8s-control) role=control-plane; node=$control_node; node_ip=$control_ip ;;
+  infra-lab-k8s-worker) role=worker; node=$worker_node; node_ip=$worker_ip ;;
   *) echo "Run on a dedicated Kubernetes lab VM." >&2; exit 2 ;;
 esac
 
@@ -42,7 +42,6 @@ client=clab-cilium-l3-client
 networkd_dropin=/etc/systemd/networkd.conf.d/90-infra-lab-cilium.conf
 cri=unix:///run/containerd-cilium-lab/containerd.sock
 vip=10.220.250.10
-pod_network=10.220.0.0/20
 client_ip=10.220.240.14
 
 export KUBECONFIG=/etc/kubernetes/admin.conf
@@ -65,6 +64,7 @@ fabric_nics() {
 }
 
 fabric_up() {
+    ansible-playbook -i localhost, -c local ../common/render-fabric.yml -e "lab_dir=$PWD"
   if ! docker container inspect -f '{{.State.Running}}' "${tors[0]}" "${tors[1]}" "$client" 2>/dev/null |
       awk '$0 == "true" { running++ } END { exit (running != 3) }'; then
     fabric_nics detach
@@ -76,14 +76,6 @@ fabric_up() {
 fabric_down() {
   fabric_nics detach
   containerlab destroy --topo topology.clab.yml --cleanup
-}
-
-configure_host_frr() {
-  sed -i -e 's/^bgpd=no$/bgpd=yes/' -e 's/^staticd=yes$/staticd=no/' /etc/frr/daemons
-  sed -e "s/@NODE_IP@/$node_ip/g" -e "s/@ASN@/$asn/g" frr/node.conf.in > "$state/frr.conf"
-  install -o frr -g frr -m 0640 "$state/frr.conf" /etc/frr/frr.conf
-  systemctl enable --now frr.service
-  systemctl restart frr.service
 }
 
 prepare_node() {
@@ -103,10 +95,7 @@ prepare_node() {
 
   modprobe overlay
   preserve_lab_routes
-  ip address replace "$node_ip/32" dev lo
-  sysctl -qw net.ipv4.ip_forward=1 net.ipv4.fib_multipath_hash_policy=1
-  local uplink
-  for uplink in "${uplinks[@]}"; do ip link set "$uplink" up; done
+  ansible-playbook -i localhost, -c local host.yml
   if ip -j -4 route show default | jq -e 'any(.[]; .protocol != "bgp")' >/dev/null; then
     echo 'Remove the management default before deploying the lab node.' >&2
     return 1
@@ -115,7 +104,6 @@ prepare_node() {
   install -m 0644 containerd-cilium-lab.service /etc/systemd/system/
   systemctl daemon-reload
   systemctl enable --now containerd-cilium-lab.service kubelet.service
-  configure_host_frr
 }
 
 prepare() { prepare_node; }
@@ -127,34 +115,15 @@ up() {
       echo "Earlier kubeadm initialization was incomplete. Run '$0 down' before retrying." >&2
       return 1
     fi
-    cat > "$state/init.yaml" <<EOF
-apiVersion: kubeadm.k8s.io/v1beta4
-kind: InitConfiguration
-localAPIEndpoint:
-  advertiseAddress: $node_ip
-nodeRegistration:
-  name: $node
-  criSocket: $cri
-  kubeletExtraArgs:
-    - name: node-ip
-      value: $node_ip
----
-apiVersion: kubeadm.k8s.io/v1beta4
-kind: ClusterConfiguration
-kubernetesVersion: $(kubeadm version -o short)
-networking:
-  podSubnet: $pod_network
-  serviceSubnet: 10.221.0.0/16
-EOF
+    local version
+    version=$(kubeadm version -o short)
+    KUBERNETES_VERSION="$version" envsubst '${KUBERNETES_VERSION}' < kubeadm-init.yaml.in > "$state/init.yaml"
     touch "$state/kubeadm-started"
-    kubeadm init --config "$state/init.yaml" --skip-phases=addon/kube-proxy --skip-token-print
+    env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u no_proxy -u NO_PROXY \
+      kubeadm init --config "$state/init.yaml" --skip-token-print
     touch "$state/kubeadm-ready"
   fi
 
-  if kubectl get node "$node" -o json |
-    jq -e 'any(.spec.taints[]?; .key == "node-role.kubernetes.io/control-plane" and .effect == "NoSchedule")' >/dev/null; then
-    kubectl taint node "$node" node-role.kubernetes.io/control-plane:NoSchedule-
-  fi
   kubectl label node "$node" node.kubernetes.io/exclude-from-external-load-balancers-
   helm upgrade --install cilium oci://quay.io/cilium/charts/cilium \
     --version 1.21.0-pre.4 --namespace kube-system --values cilium-values.yaml --wait --timeout 10m
@@ -179,22 +148,7 @@ join_config() {
   token=$(kubeadm token create --ttl 20m)
   cert_hash=$(openssl x509 -in /etc/kubernetes/pki/ca.crt -pubkey -noout |
     openssl pkey -pubin -outform DER | openssl dgst -sha256 -r | awk '{print $1}')
-  cat <<EOF
-apiVersion: kubeadm.k8s.io/v1beta4
-kind: JoinConfiguration
-discovery:
-  bootstrapToken:
-    apiServerEndpoint: $control_ip:6443
-    token: $token
-    caCertHashes:
-      - sha256:$cert_hash
-nodeRegistration:
-  name: $worker_node
-  criSocket: $cri
-  kubeletExtraArgs:
-    - name: node-ip
-      value: $worker_ip
-EOF
+  JOIN_TOKEN="$token" CA_HASH="$cert_hash" envsubst '${JOIN_TOKEN} ${CA_HASH}' < kubeadm-join.yaml.in
 }
 
 join() {
@@ -226,135 +180,7 @@ join() {
   trap - EXIT
 }
 
-check_peers() {
-  docker exec "$1" vtysh -c 'show bgp ipv4 unicast summary json' |
-    jq -e --argjson interfaces "$2" '
-      .peers | keys == $interfaces and all(.[]; .state == "Established" and .idType == "interface")
-    ' >/dev/null
-}
-
-check_routes() {
-  local interfaces=$1
-  shift
-  "$@" | jq -e --argjson interfaces "$interfaces" '
-    [.[] | select(.protocol == "bgp") | (.nexthops // [.])[] |
-      select((.via.host // .gateway // "") | startswith("fe80:")) | .dev] | sort == ($interfaces | sort)
-  ' >/dev/null
-}
-
-check_default() {
-  local links=$1
-  shift
-  check_routes "$links" "$@" -j -4 route show default &&
-    "$@" -j -4 route show default | jq -e 'length == 1 and .[0].protocol == "bgp"' >/dev/null &&
-    "$@" -j -4 route get fibmatch "$client_ip" | jq -e '.[0].dst == "default"' >/dev/null
-}
-
-set_tor_links() {
-  local interface
-  for interface in eth1 eth2 eth3; do
-    docker exec "$1" ip link set "$interface" "$2"
-  done
-}
-
-verify_node() {
-  local other_ip=$worker_ip
-  if [[ $role == worker ]]; then other_ip=$control_ip; fi
-  ip -j -4 address show dev lo | jq -e --arg ip "$node_ip" \
-    '[.[].addr_info[] | select(.scope == "global")] | length == 1 and .[0].local == $ip and .[0].prefixlen == 32' >/dev/null
-  ip -d -j link show | jq -e 'all(.[]; .linkinfo.info_kind != "vrf" and .linkinfo.info_kind != "bridge")' >/dev/null
-  vtysh -c 'show bgp ipv4 unicast summary json' |
-    jq -e '
-      .peers as $p | ($p["127.0.0.2"].state == "Established" and $p["127.0.0.2"].remoteAs == 65201)
-      and all(["k8s-tor1","k8s-tor2"][]; $p[.].state == "Established" and $p[.].idType == "interface")
-    ' >/dev/null
-  check_default '["k8s-tor1","k8s-tor2"]' ip
-  ip -j -4 route get fibmatch "$other_ip" | jq -e '.[0].dst == "default"' >/dev/null
-  ping -c 2 -W 2 "$other_ip"
-  ping -c 2 -W 2 "$client_ip"
-}
-
-fabric_traffic() {
-  local interfaces=$1 tor address
-  shift
-  for tor in "$@"; do
-    check_routes '["eth1","eth3"]' docker exec "$tor" ip -j -4 route show exact "$vip/32" || return 1
-  done
-  for address in "$control_ip" "$worker_ip" "$vip"; do
-    check_routes "$interfaces" docker exec "$client" ip -j -4 route show exact "$address/32" || return 1
-  done
-  docker exec "$client" ping -c 2 -W 2 "$control_ip" &&
-    docker exec "$client" ping -c 2 -W 2 "$worker_ip" &&
-    docker exec "$client" wget -q -T 5 -O - "http://$vip/" | grep -Fx probe
-}
-
-wait_for_fabric_traffic() {
-  local attempt
-  for ((attempt = 0; attempt < 30; attempt++)); do
-    if fabric_traffic "$@"; then return 0; fi
-    sleep 2
-  done
-  return 1
-}
-
-verify_fabric() {
-  local index surviving_tor
-  check_peers "$client" '["eth1","eth2"]'
-  for index in "${!tors[@]}"; do
-    check_peers "${tors[index]}" '["eth1","eth2","eth3"]'
-  done
-  wait_for_fabric_traffic '["eth1","eth2"]' "${tors[@]}"
-  if [[ $failover == --failover ]]; then
-    trap 'for tor in "${tors[@]}"; do set_tor_links "$tor" up || true; done' EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
-    for index in "${!tors[@]}"; do
-      surviving_tor=${tors[1 - index]}
-      printf 'Testing failover with %s down\n' "${tors[index]}"
-      set_tor_links "${tors[index]}" down
-      wait_for_fabric_traffic "[\"eth$((2 - index))\"]" "$surviving_tor"
-      set_tor_links "${tors[index]}" up
-      wait_for_fabric_traffic '["eth1","eth2"]' "${tors[@]}"
-    done
-    trap - EXIT INT TERM
-  fi
-}
-
-probe_info() {
-  kubectl -n lab-probe get pods -l app=probe --field-selector "spec.nodeName=$1" -o json |
-    jq -er '.items | select(length == 1) | .[0] | [.metadata.name, .status.podIP] | @tsv'
-}
-
-verify() {
-  local control_pod control_pod_ip worker_pod worker_pod_ip worker_cilium result pod
-  kubectl wait --for=condition=Ready --timeout=180s "node/$control_node" "node/$worker_node"
-  if kubectl -n kube-system get daemonset kube-proxy >/dev/null 2>&1; then
-    echo 'kube-proxy DaemonSet must not be present.' >&2
-    return 1
-  fi
-  kubectl -n lab-probe rollout status daemonset/probe --timeout=180s
-  kubectl -n lab-probe wait --timeout=120s \
-    --for="jsonpath={.status.loadBalancer.ingress[0].ip}=$vip" service/probe
-  kubectl get node "$control_node" "$worker_node" -o json |
-    jq -e --arg control "$control_ip" --arg worker "$worker_ip" '
-      [.items[].status.addresses[] | select(.type == "InternalIP").address] | sort == [$control,$worker]
-    ' >/dev/null
-  result=$(probe_info "$control_node")
-  IFS=$'\t' read -r control_pod control_pod_ip <<< "$result"
-  result=$(probe_info "$worker_node")
-  IFS=$'\t' read -r worker_pod worker_pod_ip <<< "$result"
-  worker_cilium=$(kubectl -n kube-system get pods -l k8s-app=cilium \
-    --field-selector "spec.nodeName=$worker_node,status.phase=Running" \
-    -o json | jq -er '.items | select(length == 1) | .[0].metadata.name')
-
-  verify_node
-  check_default '["k8s-tor1","k8s-tor2"]' kubectl -n kube-system exec "$worker_cilium" -- ip
-  for pod in "$control_pod" "$worker_pod"; do
-    kubectl -n lab-probe exec "$pod" -- ping -c 2 -W 2 "$client_ip"
-  done
-  kubectl -n lab-probe exec "$control_pod" -- ping -c 2 -W 2 "$worker_pod_ip"
-  kubectl -n lab-probe exec "$worker_pod" -- ping -c 2 -W 2 "$control_pod_ip"
-}
+source ./verify.sh
 
 down() {
   [[ -f $state/owned ]] || return 0
@@ -371,7 +197,8 @@ down() {
     rm -f /etc/systemd/system/containerd-cilium-lab.service /etc/containerd/cilium-lab.toml
     systemctl daemon-reload
   fi
-  ip address del "$node_ip/32" dev lo 2>/dev/null || true
+  rm -f /etc/netplan/80-infra-lab-data.yaml /etc/sysctl.d/80-infra-lab-routing.conf
+  netplan apply
   if cmp -s networkd-cilium-lab.conf "$networkd_dropin"; then
     rm -f "$networkd_dropin"
     if systemctl is-active --quiet systemd-networkd; then

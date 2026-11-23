@@ -1,0 +1,13 @@
+fabric_nodes:
+  - name: client
+    role: client
+    address: 10.220.240.14
+    asn: 65203
+  - name: tor1
+    role: tor
+    address: 10.220.255.1
+    asn: 65101
+  - name: tor2
+    role: tor
+    address: 10.220.255.3
+    asn: 65102

@@ -19,7 +19,7 @@ work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT
 
 apt-get update
-apt-get install -y ca-certificates curl docker.io git iproute2 jq python3
+apt-get install -y ansible-core ca-certificates curl docker.io git iproute2 jq python3
 systemctl enable --now docker
 docker info --format '{{.ServerVersion}}'
 
@@ -28,4 +28,15 @@ printf '%s  %s\n' "$sha256" "$work_dir/$asset" | sha256sum --check
 tar -xzf "$work_dir/$asset" -C "$work_dir" containerlab
 "$work_dir/containerlab" version
 install -m 0755 "$work_dir/containerlab" /usr/local/bin/containerlab
-docker pull quay.io/frrouting/frr:10.4.1
+image=quay.io/frrouting/frr:10.4.1
+if docker image inspect "$image" >/dev/null 2>&1; then
+  exit 0
+fi
+if [[ -n ${https_proxy:-} ]]; then
+  # Registry requests originate in this process so they use the build-time SSH proxy.
+  apt-get install -y skopeo
+  skopeo copy --retry-times 3 "docker://$image" "docker-archive:$work_dir/frr.tar:$image"
+  docker load --input "$work_dir/frr.tar"
+else
+  docker pull "$image"
+fi

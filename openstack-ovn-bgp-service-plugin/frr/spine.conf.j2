@@ -1,10 +1,14 @@
 ! データセンター向けプロファイル（BGP 設定やタイマーの最適化）
 frr defaults datacenter
-hostname spine1
+hostname {{ node.name }}
+!
+interface lo
+ ip address {{ node.address }}/32
+exit
 !
 ! --- BGP 設定 ---
-router bgp 65001
- bgp router-id 10.211.255.3
+router bgp {{ node.asn }}
+ bgp router-id {{ node.address }}
  ! IPv4 ユニキャストの自動有効化を無効化
  no bgp default ipv4-unicast
  ! 異なる AS からの経路でもパス長が同じであれば ECMP を許可
@@ -20,11 +24,10 @@ router bgp 65001
  neighbor eth2 interface peer-group LEAVES
  !
  address-family ipv4 unicast
-  ! 自ノードのループバック IP を Fabric に広報（疎通確認・プローブ用）
-  network 10.211.255.3/32
-  ! Leaf ピアを有効化（Leaf からホストの /32 ルートを受信）
   neighbor LEAVES activate
-  ! Leaf 2 台を経由したホスト宛て ECMP（最大 2 パス）
+  ! Leaf 2 台を経由したテナント VM 宛て ECMP（最大 2 パス）
   maximum-paths 2
+  ! 自ノードのループバック IP を Fabric に広報（疎通確認・プローブ用）
+  network {{ node.address }}/32
  exit-address-family
 !

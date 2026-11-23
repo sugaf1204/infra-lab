@@ -21,17 +21,15 @@ topology:
     leaf1:
       kind: linux
       binds:
-        - frr/leaf1.conf:/etc/frr/frr.conf:ro
+        - rendered/leaf1.conf:/etc/frr/frr.conf:ro
     leaf2:
       kind: linux
       binds:
-        - frr/leaf2.conf:/etc/frr/frr.conf:ro
+        - rendered/leaf2.conf:/etc/frr/frr.conf:ro
     spine:
       kind: linux
       binds:
-        - frr/spine.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip address replace 203.0.113.10/32 dev lo
+        - rendered/spine.conf:/etc/frr/frr.conf:ro
   links:
     - endpoints: ["leaf1:eth2", "spine:eth1"]
     - endpoints: ["leaf2:eth2", "spine:eth2"]

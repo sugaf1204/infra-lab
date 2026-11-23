@@ -1,6 +1,6 @@
 ! データセンター向けプロファイル（BGP 設定やタイマーの最適化）
 frr defaults datacenter
-hostname @HOSTNAME@
+hostname {{ ansible_facts.hostname }}
 !
 ! --- プレフィックスリスト & コミュニティリスト ---
 ! デフォルトルート（0.0.0.0/0）のみ許可
@@ -37,8 +37,8 @@ vrf ovnvrf10
 exit-vrf
 !
 ! --- BGP 設定: ovnvrf10 ---
-router bgp @ASN@ vrf ovnvrf10
- bgp router-id @NODE_IP@
+router bgp {{ chassis.asn }} vrf ovnvrf10
+ bgp router-id {{ chassis.address }}
  bgp bestpath as-path multipath-relax
  address-family ipv4 unicast
   ! default VRF で ToR から学習したデフォルトルート等を取り込む
@@ -48,16 +48,16 @@ router bgp @ASN@ vrf ovnvrf10
  exit-address-family
 !
 ! --- BGP 設定: ovnvrf42（OVN BGP プラグインが VM /32 を注入する VRF）---
-router bgp @ASN@ vrf ovnvrf42
- bgp router-id @NODE_IP@
+router bgp {{ chassis.asn }} vrf ovnvrf42
+ bgp router-id {{ chassis.address }}
  address-family ipv4 unicast
   ! OVN BGP プラグインがカーネル（テーブル 42）に追加したローカル VM /32 を再配布し、コミュニティを付与
   redistribute kernel route-map TAG-CHASSIS-HOST
  exit-address-family
 !
 ! --- BGP 設定: default VRF（ToR との eBGP Unnumbered ピアリング）---
-router bgp @ASN@
- bgp router-id @NODE_IP@
+router bgp {{ chassis.asn }}
+ bgp router-id {{ chassis.address }}
  ! IPv4 ユニキャストの自動有効化を無効化
  no bgp default ipv4-unicast
  ! 異なる AS からの経路でもパス長が同じであれば ECMP を許可
@@ -76,7 +76,7 @@ router bgp @ASN@
   ! ovnvrf42 からコミュニティ付与済みの VM /32 経路を取り込む
   import vrf ovnvrf42
   ! 自ノードのループバック IP にもコミュニティを付与して広報対象に追加
-  network @NODE_IP@/32 route-map TAG-CHASSIS-HOST
+  network {{ chassis.address }}/32 route-map TAG-CHASSIS-HOST
   ! ToR 2 台への ECMP（最大 2 パス）
   maximum-paths 2
   !

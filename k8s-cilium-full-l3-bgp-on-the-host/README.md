@@ -2,6 +2,19 @@
 
 kubeadm の control plane と worker を別々の VM で動かす。`kube-proxy` は廃止し、Cilium の `kubeProxyReplacement: true` で Service 転送を行う。両ノードを2台の ToR に接続し、ノード IP はそれぞれのループバックに IPv4 /32 で1つ割り当てる。ホスト FRR は各ノード OS の systemd サービス（`frr` パッケージ）として直接動かし、Kubernetes ノード上には Docker や余分なブリッジ（`docker0` 等）を作成しない。各ノードの Cilium とホスト FRR の間は Cilium の `127.0.0.2` から FRR の `127.0.0.1` への接続で numbered eBGP を張る。ホスト FRR 側で `local-as 65200 no-prepend replace-as` を設定することで、全ノード共通の1つの `CiliumBGPClusterConfig` でピアを張る。
 
+## 実機検証結果（2026-11-23）
+
+Ubuntu 24.04.5 の control plane（`infra-lab-k8s-control`）と worker（`infra-lab-k8s-worker`）、および fabric VM（`infra-lab-switches`、Containerlab 0.83.0 / FRR 10.4.1）で全検証を通過した。
+
+- **冪等性・ホスト構成**: 両ノードで `host.yml` の Ansible 再実行は `changed=0 failed=0`、`lab.sh up` の再実行も正常完了した。両ノードの `lo` はそれぞれ `10.220.255.10/32`・`10.220.255.11/32`、IPv4 main table のデフォルト経路は IPv6 リンクローカル 2-way ECMP（`src` 自ノード IP）、VRF・ブリッジ（`docker0` 等）は不在、`net.ipv4.fib_multipath_hash_policy=1` を確認した。
+- **FRR と Cilium の実機知見**:
+  - Ubuntu 24.04 標準の FRR 8.4.4 では Cilium が作成する `proto kernel` の Pod `/32` ルートが zebra に取り込まれなかったため、`install-tools.sh` で FRRouting 公式リポジトリ（`frr-10`、検証時は `10.7.1`）を導入する構成とした。これにより不要な `/32` の漏洩なく Node IP・Pod `/32`・VIP `/32` のみが BGP 広告されることを確認した。
+  - BGP Unnumbered 環境では `k8s-tor1` / `k8s-tor2` に IPv4 アドレスが付かないため、Cilium の `kubeProxyReplacement: true` で BPF を正しくアタッチするには `cilium-values.yaml` に `devices: "k8s-tor+,lo"` と `nodePort.directRoutingDevice: "lo"` の明示が必要だった。
+- **疎通・障害復旧**:
+  - control plane の `sudo ./lab.sh verify`（`kube-proxy` DaemonSet 不在、ノード間・外部クライアント疎通、両 Pod → 外部クライアント疎通、Pod 間双方向疎通）が終了コード 0 で通過した。
+  - worker の `sudo ./lab.sh verify-node`（ローカル BGP 3セッション Established、デフォルト ECMP、VRF/ブリッジ不在、疎通）が終了コード 0 で通過した。
+  - fabric VM の `sudo ./lab.sh verify-fabric --failover`（両 ToR での VIP `10.220.250.10/32` 2-way ECMP、正常時・`tor1` 片系断・復旧・`tor2` 片系断・復旧での両ノード ping と `http://10.220.250.10/` の `probe` 応答）が終了コード 0 で通過した。
+
 ## 検証ネットワーク
 
 ![Fabric VM と同じ階層にある2台の Kubernetes VM を Dual ToR に接続する](network.svg)
@@ -41,9 +54,3 @@ control plane で `sudo ./lab.sh verify` を実行し、`kube-proxy` 不在・Po
 ## 撤去
 
 worker、control plane の順に `sudo ./lab.sh down` を実行する。最後に fabric で `sudo ./lab.sh fabric-down` を実行する。
-
-## 未検証の項目
-
-- `kubeProxyReplacement: true`（`kube-proxy` 廃止）＋ `bpf.hostLegacyRouting: true` での実機疎通（Service VIP / Pod 間通信）。
-- ホスト FRR の systemd ネイティブ化（Docker / `DOCKER-USER` / `br_netfilter` 撤去）と `local-as 65200` による共通 `CiliumBGPClusterConfig` の実機検証。
-- `remote-as external`・`frr defaults datacenter` 統一・CIDR フィルター排除・ToR 上の VIP ECMP チェックを含む `verify` / `verify-node` / `verify-fabric --failover` の再検証。

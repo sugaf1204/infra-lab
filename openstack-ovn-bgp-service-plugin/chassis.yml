@@ -1,0 +1,105 @@
+- name: Configure OVN BGP chassis
+  hosts: all
+  become: true
+  vars:
+    chassis_nodes:
+      infra-lab-openstack: {address: 203.0.113.31, asn: 65231}
+      infra-lab-openstack-compute: {address: 203.0.113.32, asn: 65235}
+    chassis: "{{ chassis_nodes[ansible_facts.hostname] }}"
+    policy_dir: /etc/systemd/network/10-netplan-lo.network.d
+  tasks:
+    - name: Discover installed services
+      ansible.builtin.service_facts:
+
+    - name: Check DevStack-installed ovs-vsctl path
+      ansible.builtin.stat:
+        path: /usr/local/bin/ovs-vsctl
+      register: local_ovs_vsctl
+
+    - name: Expose DevStack ovs-vsctl at /usr/bin/ovs-vsctl for Netplan
+      when: local_ovs_vsctl.stat.exists
+      ansible.builtin.file:
+        src: /usr/local/bin/ovs-vsctl
+        dest: /usr/bin/ovs-vsctl
+        state: link
+
+    - name: Configure OVS bridges, data links and source routing
+      ansible.builtin.template:
+        src: chassis-netplan.yaml.j2
+        dest: /etc/netplan/80-infra-lab-chassis.yaml
+        mode: '0600'
+      notify: Apply chassis network
+
+    - name: Check whether Netplan-managed OVS bridges exist
+      ansible.builtin.command: ovs-vsctl list-br
+      register: ovs_bridges
+      changed_when: "'br-ex' not in ovs_bridges.stdout_lines or 'br-bgp-0' not in ovs_bridges.stdout_lines or 'br-bgp-1' not in ovs_bridges.stdout_lines"
+      notify: Apply chassis network
+
+    - name: Create loopback policy drop-in directory
+      ansible.builtin.file:
+        path: "{{ policy_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Reject chassis traffic when table 10 has no route
+      ansible.builtin.copy:
+        dest: "{{ policy_dir }}/80-infra-lab-policy.conf"
+        mode: '0644'
+        content: |
+          [RoutingPolicyRule]
+          From={{ chassis.address }}/32
+          Priority=10111
+          Type=unreachable
+      notify: Apply chassis network
+
+    - name: Install chassis routing sysctls
+      ansible.builtin.copy:
+        src: chassis-sysctl.conf
+        dest: /etc/sysctl.d/80-infra-lab-chassis.conf
+        mode: '0644'
+      notify: Apply chassis sysctls
+
+    - name: Configure FRR daemon selection
+      ansible.builtin.copy:
+        src: ../common/frr/daemons
+        dest: /etc/frr/daemons
+        mode: '0644'
+      notify: Restart FRR
+
+    - name: Configure chassis routing
+      ansible.builtin.template:
+        src: frr/chassis.conf.j2
+        dest: /etc/frr/frr.conf
+        mode: '0640'
+        owner: frr
+        group: frr
+      notify: Restart FRR
+
+    - name: Apply chassis configuration
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable host FRR
+      ansible.builtin.systemd_service:
+        name: frr
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Apply chassis network
+      ansible.builtin.command: netplan apply
+      notify: Restart OVN agent
+
+    - name: Apply chassis sysctls
+      ansible.builtin.command: sysctl -p /etc/sysctl.d/80-infra-lab-chassis.conf
+
+    - name: Restart OVN agent
+      when: '"devstack@q-ovn-agent.service" in ansible_facts.services'
+      ansible.builtin.systemd_service:
+        name: devstack@q-ovn-agent
+        state: restarted
+
+    - name: Restart FRR
+      ansible.builtin.systemd_service:
+        name: frr
+        state: restarted

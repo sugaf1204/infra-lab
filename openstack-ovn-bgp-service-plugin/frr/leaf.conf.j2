@@ -1,6 +1,6 @@
 ! データセンター向けプロファイル（BGP 設定やタイマーの最適化）
 frr defaults datacenter
-hostname leaf1
+hostname {{ node.name }}
 !
 ! --- プレフィックスリスト & コミュニティリスト ---
 ! /32 ホストルートのみを許可
@@ -15,8 +15,8 @@ route-map CHASSIS-HOSTS permit 10
  match community CHASSIS-HOSTS
 !
 ! --- BGP 設定 ---
-router bgp 65232
- bgp router-id 192.0.2.1
+router bgp {{ node.asn }}
+ bgp router-id {{ node.address }}
  ! IPv4 ユニキャストの自動有効化を無効化
  no bgp default ipv4-unicast
  ! 異なる AS からの経路でもパス長が同じであれば ECMP を許可

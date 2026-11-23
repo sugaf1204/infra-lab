@@ -1,0 +1,59 @@
+- name: Configure Kubernetes node routing
+  hosts: all
+  become: true
+  vars:
+    nodes:
+      infra-lab-k8s-control: {address: 10.220.255.10, asn: 65202}
+      infra-lab-k8s-worker: {address: 10.220.255.11, asn: 65204}
+    node: "{{ nodes[ansible_facts.hostname] }}"
+  tasks:
+    - name: Configure data interfaces and loopback
+      ansible.builtin.template:
+        src: netplan.yaml.j2
+        dest: /etc/netplan/80-infra-lab-data.yaml
+        mode: '0600'
+      notify: Apply netplan
+
+    - name: Install routing sysctls
+      ansible.builtin.copy:
+        src: ../common/sysctl.d/80-infra-lab-routing.conf
+        dest: /etc/sysctl.d/80-infra-lab-routing.conf
+        mode: '0644'
+      notify: Apply routing sysctls
+
+    - name: Select FRR daemons
+      ansible.builtin.copy:
+        src: ../common/frr/daemons
+        dest: /etc/frr/daemons
+        mode: '0644'
+      notify: Restart FRR
+
+    - name: Configure host BGP
+      ansible.builtin.template:
+        src: frr/node.conf.j2
+        dest: /etc/frr/frr.conf
+        owner: frr
+        group: frr
+        mode: '0640'
+      notify: Restart FRR
+
+    - name: Apply network configuration before starting routing
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable host routing
+      ansible.builtin.systemd_service:
+        name: frr
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Apply netplan
+      ansible.builtin.command: netplan apply
+
+    - name: Apply routing sysctls
+      ansible.builtin.command: sysctl -p /etc/sysctl.d/80-infra-lab-routing.conf
+
+    - name: Restart FRR
+      ansible.builtin.systemd_service:
+        name: frr
+        state: restarted

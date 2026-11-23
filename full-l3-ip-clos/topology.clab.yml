@@ -24,44 +24,32 @@ topology:
       kind: linux
       group: router
       binds:
-        - frr/leaf1.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip -4 addr replace 10.211.255.1/32 dev lo
+        - rendered/leaf1.conf:/etc/frr/frr.conf:ro
     leaf2:
       kind: linux
       group: router
       binds:
-        - frr/leaf2.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip -4 addr replace 10.211.255.2/32 dev lo
+        - rendered/leaf2.conf:/etc/frr/frr.conf:ro
     spine1:
       kind: linux
       group: router
       binds:
-        - frr/spine1.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip -4 addr replace 10.211.255.3/32 dev lo
+        - rendered/spine1.conf:/etc/frr/frr.conf:ro
     spine2:
       kind: linux
       group: router
       binds:
-        - frr/spine2.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip -4 addr replace 10.211.255.4/32 dev lo
+        - rendered/spine2.conf:/etc/frr/frr.conf:ro
     host1:
       kind: linux
       group: router
       binds:
-        - frr/host1.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip -4 addr replace 10.211.1.2/32 dev lo
+        - rendered/host1.conf:/etc/frr/frr.conf:ro
     host2:
       kind: linux
       group: router
       binds:
-        - frr/host2.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip -4 addr replace 10.211.2.2/32 dev lo
+        - rendered/host2.conf:/etc/frr/frr.conf:ro
   links:
     - endpoints: ["leaf1:eth1", "spine1:eth1"]
     - endpoints: ["leaf1:eth2", "spine2:eth1"]

@@ -17,6 +17,7 @@ spine は自身のループバック /32 を ToR に広告する。ToR がホス
 [共通セットアップ](../common/README.md)後、このディレクトリで実行する。旧トポロジーを使っている場合は、旧チェックアウトでラボを停止してから切り替える。
 
 ```bash
+ansible-playbook -i localhost, -c local ../common/render-fabric.yml -e "lab_dir=$PWD"
 sudo containerlab deploy -t topology.clab.yml
 sudo ./verify.sh
 sudo ./verify.sh --failover
@@ -31,6 +32,6 @@ sudo docker exec clab-full-l3-ip-clos-spine1 vtysh -c 'show ip route 10.211.2.2/
 sudo containerlab destroy --cleanup -t topology.clab.yml
 ```
 
-## 未検証の項目
+## 新規 fabric VM での検証
 
-- `remote-as external`・`frr defaults datacenter` 統一・ホストのデフォルトのみ学習（`set src` 付与）・`fib_multipath_hash_policy=1` への変更後の実機での `verify.sh --failover` 再検証。
+Containerlab 0.83.0 と FRR 10.4.1 で6ノードを展開した。Ansible の再実行は `changed=0 failed=0`、`verify.sh --failover` は終了コード 0 だった。正常時・各 ToR の片系断・各復旧後を通じた30回の ping はすべて損失 0%。復旧後、両ホストの IPv4 main table は自ノードの loopback IP を送信元とする BGP デフォルトのみで、eth1 と eth2 の IPv6 リンクローカル next hop が等コストだった。試験中の `vtysh` 出力には `vtysh.conf` がない旨の警告が出た。

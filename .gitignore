@@ -7,3 +7,8 @@ clab-*/
 .env
 local.conf
 clouds.yaml
+/*/rendered/
+
+.terraform/
+*.tfstate
+*.tfstate.*

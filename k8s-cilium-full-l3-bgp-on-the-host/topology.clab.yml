@@ -20,19 +20,17 @@ topology:
       kind: linux
       group: router
       binds:
-        - frr/tor1.conf:/etc/frr/frr.conf:ro
+        - rendered/tor1.conf:/etc/frr/frr.conf:ro
     tor2:
       kind: linux
       group: router
       binds:
-        - frr/tor2.conf:/etc/frr/frr.conf:ro
+        - rendered/tor2.conf:/etc/frr/frr.conf:ro
     client:
       kind: linux
       group: router
       binds:
-        - frr/client.conf:/etc/frr/frr.conf:ro
-      exec:
-        - ip -4 addr replace 10.220.240.14/32 dev lo
+        - rendered/client.conf:/etc/frr/frr.conf:ro
   links:
     - endpoints: ["tor1:eth2", "client:eth1"]
     - endpoints: ["tor2:eth2", "client:eth2"]

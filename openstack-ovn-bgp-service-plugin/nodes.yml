@@ -1,0 +1,13 @@
+fabric_nodes:
+  - name: leaf1
+    role: leaf
+    address: 192.0.2.1
+    asn: 65232
+  - name: leaf2
+    role: leaf
+    address: 192.0.2.2
+    asn: 65234
+  - name: spine
+    role: spine
+    address: 203.0.113.10
+    asn: 65233

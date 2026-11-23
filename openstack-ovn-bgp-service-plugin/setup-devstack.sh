@@ -40,8 +40,8 @@ if [[ -n ${controller_ip:-} && ! -e $stack_dir/local.conf ]]; then
   fi
 fi
 
-sudo -n apt-get update
-sudo -n apt-get install -y git frr jq
+sudo -n --preserve-env=http_proxy,https_proxy,no_proxy apt-get update
+sudo -n --preserve-env=http_proxy,https_proxy,no_proxy apt-get install -y git frr jq ansible-core
 sudo -n modprobe vrf
 
 if [[ ! -d $stack_dir/.git ]]; then

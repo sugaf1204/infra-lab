@@ -1,26 +1,30 @@
 ! データセンター向けプロファイル（BGP 設定やタイマーの最適化）
 frr defaults datacenter
-hostname host1
+hostname {{ node.name }}
+!
+interface lo
+ ip address {{ node.address }}/32
+exit
 !
 ! --- プレフィックスリスト（経路フィルタ） ---
 ! ToR から学習する経路をデフォルトルート（0.0.0.0/0）のみに制限
 ip prefix-list DEFAULT-ONLY permit 0.0.0.0/0
 ! 自ホストのループバック IP のみを許可（外部へ誤って他経路を広報しないためのフィルタ）
-ip prefix-list SELF permit 10.211.1.2/32
+ip prefix-list SELF permit {{ node.address }}/32
 !
 ! --- ルートマップ ---
 ! eBGP Unnumbered では next-hop が IPv6 リンクローカルになるため、
 ! カーネル FIB へのインストール時に IPv4 送信元 IP（src）として自ノードのループバック IP を設定
 route-map INSTALL-DEFAULT permit 10
  match ip address prefix-list DEFAULT-ONLY
- set src 10.211.1.2
+ set src {{ node.address }}
 !
 ! BGP で学習した経路をカーネル FIB に反映する際に上記のルートマップを適用
 ip protocol bgp route-map INSTALL-DEFAULT
 !
 ! --- BGP 設定 ---
-router bgp 65211
- bgp router-id 10.211.1.2
+router bgp {{ node.asn }}
+ bgp router-id {{ node.address }}
  ! IPv4 ユニキャストの自動有効化を無効化（明示的に address-family で activate する）
  no bgp default ipv4-unicast
  ! AS パス長が同じであれば異なる対向 AS からの経路でも ECMP（等コストマルチパス）を許可
@@ -39,7 +43,7 @@ router bgp 65211
  !
  address-family ipv4 unicast
   ! 自ノードのループバック IP を BGP に投入
-  network 10.211.1.2/32
+  network {{ node.address }}/32
   neighbor TORS activate
   ! ToR からはデフォルトルートのみを受信
   neighbor TORS prefix-list DEFAULT-ONLY in

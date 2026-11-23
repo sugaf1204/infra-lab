@@ -4,7 +4,7 @@ hostname cilium-host-frr
 !
 ! --- プレフィックスリスト（経路フィルタ） ---
 ! 自ノードのループバック IP のみを許可
-ip prefix-list NODE-LOOPBACK permit @NODE_IP@/32
+ip prefix-list NODE-LOOPBACK permit {{ node.address }}/32
 ! Pod IP や Service VIP など /32 ホストルートのみを許可
 ip prefix-list HOST-ROUTES permit 0.0.0.0/0 ge 32
 ! デフォルトルート（0.0.0.0/0）のみを許可
@@ -24,20 +24,19 @@ route-map PODS permit 10
 ! Cilium から学習した Service VIP (/32) の next-hop を自ノード IP に書き換え（ToR 側への転送先を自ノードにする）
 route-map CILIUM-VIPS permit 10
  match ip address prefix-list HOST-ROUTES
- set ip next-hop @NODE_IP@
 !
 ! ToR から学習したデフォルトルートをカーネル FIB に導入する際、
 ! 送信元 IP（src）として自ノードのループバック IP を設定（eBGP Unnumbered 対策）
 route-map INSTALL-FABRIC permit 10
  match ip address prefix-list DEFAULT-ONLY
- set src @NODE_IP@
+ set src {{ node.address }}
 !
 ! BGP 学習経路のカーネル反映時に上記ルートマップを適用
 ip protocol bgp route-map INSTALL-FABRIC
 !
 ! --- BGP 設定 ---
-router bgp @ASN@
- bgp router-id @NODE_IP@
+router bgp {{ node.asn }}
+ bgp router-id {{ node.address }}
  ! IPv4 ユニキャストの自動有効化を無効化
  no bgp default ipv4-unicast
  ! Cilium からの VIP 更新がローカルアドレス（martian）を next-hop に持っていても受け入れる
@@ -71,7 +70,7 @@ router bgp @ASN@
   !
   ! Cilium ピアを有効化
   neighbor CILIUM activate
-  ! Cilium から受信した VIP の next-hop を自ノード IP に設定
+  ! Cilium から受信する VIP を /32 に制限
   neighbor CILIUM route-map CILIUM-VIPS in
   ! Cilium へは経路を広告しない（不要なループやルーティング混乱を防止）
   neighbor CILIUM prefix-list DENY-ALL out

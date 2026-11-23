@@ -1,0 +1,27 @@
+network:
+  version: 2
+  renderer: networkd
+  openvswitch:
+    external-ids:
+      ovn-bridge-mappings: "public:br-ex"
+      neutron-bgp-peer-bridges: "br-bgp-0,br-bgp-1"
+      neutron-bgp-interconnect-bridge: br-ex
+  ethernets:
+    lo:
+      addresses: ["{{ chassis.address }}/32"]
+      routing-policy:
+        - from: "{{ chassis.address }}/32"
+          table: 10
+          priority: 10110
+    ovn-tor1: {}
+    ovn-tor2: {}
+  bridges:
+    br-ex:
+      interfaces: []
+      openvswitch: {}
+    br-bgp-0:
+      interfaces: [ovn-tor1]
+      openvswitch: {}
+    br-bgp-1:
+      interfaces: [ovn-tor2]
+      openvswitch: {}

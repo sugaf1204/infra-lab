@@ -11,6 +11,12 @@ node3 上の検証専用 Linux VM で、Containerlab を使って IPv4 の宛先
 
 [共通セットアップ](common/README.md)を実行してから、各ラボの README に従う。別 VM 上の各ノードと ToR は libvirt の独立したポイントツーポイント L2 で接続し、fabric VM 側の専用 virtio NIC を ToR のネットワーク名前空間に割り当てる。
 
+## 構成の管理
+
+VM の管理アドレスは cloud-init、ラボ用のホストネットワークは Netplan、カーネル設定は `/etc/sysctl.d/` で管理する。FRR はノードの値と役割別の Jinja テンプレートから Ansible で生成する。Containerlab はコンテナとリンクのトポロジーを管理し、Kubernetes は kubeadm 設定とマニフェスト、OpenStack は Terraform でゲストと検証ネットワークを管理する。
+
+OS 設定と FRR には、ファイル配置とサービス反映を各スクリプトで実装する案も比較した。3ラボで共用する FRR の生成と、ホスト側で構成変更時だけ反映する処理には Ansible を採用した。OpenStack リソースは作成順序と撤去対象を Terraform state で追跡する。
+
 ## ログイン
 
 管理端末から `ssh -J node3 ubuntu@<管理IP>` で各 VM に入る。固定管理アドレスは [共通セットアップ](common/README.md#接続方法) を参照。
@@ -39,4 +45,4 @@ done
 
 ## 作業レポート
 
-fabric、Kubernetes control plane、Kubernetes worker、OpenStack controller、OpenStack compute の配置は [共通の物理構成図](common/README.md#接続方法) を参照。OpenStack の追加 compute の Nova 登録とテナント VM 間転送は未確認。ラボごとの検証手順と制約を各 README に記録する。
+fabric、Kubernetes control plane、Kubernetes worker、OpenStack controller、OpenStack compute の配置は [共通の物理構成図](common/README.md#接続方法) を参照。全3ラボ（`full-l3-ip-clos`、`k8s-cilium-full-l3-bgp-on-the-host`、`openstack-ovn-bgp-service-plugin`）で宣言的構成の冪等適用、正常時・ToR 片系断・復旧後の経路と疎通、OpenStack 追加 compute の Nova 登録および両 chassis 上のテナント VM の広告・疎通・撤回を実機で確認済み。ラボごとの検証結果と知見は各 README に記録する。

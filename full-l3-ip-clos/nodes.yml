@@ -1,0 +1,25 @@
+fabric_nodes:
+  - name: host1
+    role: host
+    address: 10.211.1.2
+    asn: 65211
+  - name: host2
+    role: host
+    address: 10.211.2.2
+    asn: 65212
+  - name: leaf1
+    role: leaf
+    address: 10.211.255.1
+    asn: 65101
+  - name: leaf2
+    role: leaf
+    address: 10.211.255.2
+    asn: 65102
+  - name: spine1
+    role: spine
+    address: 10.211.255.3
+    asn: 65001
+  - name: spine2
+    role: spine
+    address: 10.211.255.4
+    asn: 65002

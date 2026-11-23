@@ -85,9 +85,18 @@ wait_for_dual_tor() {
 check_traffic() {
   local index
   for index in "${chassis_indices[@]}"; do
-    docker exec "$spine" ping -I "$probe" -c 3 -W 2 "${node_ips[index]}"
-    docker exec "$spine" ping -I "$probe" -c 3 -W 2 "${fixed_ips[index]}"
+    docker exec "$spine" ping -I "$probe" -c 3 -W 2 "${node_ips[index]}" || return 1
+    docker exec "$spine" ping -I "$probe" -c 3 -W 2 "${fixed_ips[index]}" || return 1
   done
+}
+
+wait_for_traffic() {
+  local attempt
+  for ((attempt = 0; attempt < 15; attempt++)); do
+    if check_traffic; then return 0; fi
+    sleep 2
+  done
+  return 1
 }
 
 set_chassis_links() {
@@ -161,9 +170,10 @@ case "$check" in
       else
         wait_for_routes '["eth1"]' "${leaves[0]}"
       fi
-      if [[ $check == failover ]]; then check_traffic; fi
+      if [[ $check == failover ]]; then wait_for_traffic; fi
       set_chassis_links "$leaf" up
       wait_for_dual_tor
+      if [[ $check == failover ]]; then wait_for_traffic; fi
     done
     trap - EXIT INT TERM
     printf 'Selected VM fixed IPs converged through each surviving ToR (%s)\n' "$check"

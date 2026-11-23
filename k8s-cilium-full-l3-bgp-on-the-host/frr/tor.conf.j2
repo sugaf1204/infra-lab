@@ -1,6 +1,6 @@
 ! データセンター向けプロファイル（BGP 設定やタイマーの最適化）
 frr defaults datacenter
-hostname tor2
+hostname {{ node.name }}
 !
 ! --- プレフィックスリスト（経路フィルタ） ---
 ! ノードおよび外部クライアントから受信する経路を /32（ホストルート / Node IP / Pod IP / VIP）のみに限定
@@ -9,8 +9,8 @@ ip prefix-list HOST-ROUTES permit 0.0.0.0/0 ge 32
 ip prefix-list DEFAULT-ONLY permit 0.0.0.0/0
 !
 ! --- BGP 設定 ---
-router bgp 65102
- bgp router-id 10.220.255.3
+router bgp {{ node.asn }}
+ bgp router-id {{ node.address }}
  ! IPv4 ユニキャストの自動有効化を無効化
  no bgp default ipv4-unicast
  ! 異なる AS からの経路でもパス長が同じであれば ECMP を許可
