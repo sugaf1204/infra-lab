@@ -1,6 +1,6 @@
 # Infra Lab
 
-node3 上の検証専用 Linux VM で、Containerlab を使って IPv4 の宛先別経路と、IPv6 リンクローカル next hop の IPv4 デフォルトを交換する。各ラボは Dual ToR 構成で、検証対象ホストは独立した2本の L3 インターフェースを使う。ノード IP はループバックに /32 で割り当てる。ToR に接続する BGP ピアはインターフェース指定の Unnumbered とし、IPv6 link-local を自動検出する。Kubernetes ラボのホスト内セッションはループバック上の numbered eBGP を使う。
+node3 上の検証専用 Linux VM で、Containerlab を使って IPv4 の宛先別経路と、IPv6 リンクローカル next hop の IPv4 デフォルトを交換する。各ラボは Dual ToR 構成で、検証対象ホストは独立した2本の L3 インターフェースを使う。ノード IP はループバックに /32 で割り当て、各種 FRR 設定には自ノードのループバック IP 以外の IP や CIDR を記述しない。ToR に接続する BGP ピアは `remote-as external` を用いたインターフェース指定の Unnumbered とし、IPv6 link-local を自動検出する。Kubernetes ラボは `kube-proxy` を廃止し、ホスト OS の FRR サービスと Cilium 間でループバック上の numbered eBGP を使う。全ラボで `net.ipv4.fib_multipath_hash_policy=1`（L4 ハッシュ）を有効化する。
 
 | ディレクトリ | 検証内容 |
 | --- | --- |

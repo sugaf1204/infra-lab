@@ -72,7 +72,7 @@ sudo containerlab version
 sudo docker image inspect quay.io/frrouting/frr:10.4.1 --format '{{.Id}}'
 ```
 
-スクリプトは Ubuntu の `docker.io` と共通 CLI を導入し、Containerlab 0.83.0 を `/usr/local/bin/containerlab` に配置する。ラボ共通の FRR は 10.4.1 で、`frr/daemons` が zebra、bgpd、staticd を有効化する。Cilium と OpenStack 固有の依存関係は各ラボの手順で導入する。
+スクリプトは Ubuntu の `docker.io` と共通 CLI を導入し、Containerlab 0.83.0 を `/usr/local/bin/containerlab` に配置する。ラボ共通の FRR は 10.4.1 で、`frr/daemons` が zebra と bgpd のみを有効化する（静的経路は使わないため `staticd=no`）。Cilium と OpenStack 固有の依存関係は各ラボの手順で導入する。
 
 - [Containerlab 0.83.0 の配布元](https://github.com/srl-labs/containerlab/releases/tag/v0.83.0)
 - [FRR 10.4.1 の配布元](https://github.com/FRRouting/frr/releases/tag/frr-10.4.1)

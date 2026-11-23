@@ -7,7 +7,7 @@ cd "$workdir"
 repository=https://pkgs.k8s.io/core:/stable:/v1.34/deb
 
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl gpg containerd conntrack
+sudo apt-get install -y ca-certificates curl gpg containerd conntrack frr jq
 curl -fsSLo Release.key "$repository/Release.key"
 gpg --batch --dearmor --output kubernetes-apt-keyring.gpg Release.key
 sudo install -d -m 0755 /etc/apt/keyrings

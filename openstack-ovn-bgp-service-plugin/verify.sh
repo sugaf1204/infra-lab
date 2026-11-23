@@ -115,8 +115,8 @@ if [[ $check == withdrawn && $withdraw_ip != "${fixed_ips[0]}" && $withdraw_ip !
   exit 2
 fi
 
-if [[ $(hostname -s) != infra-lab-fabric ]]; then
-  echo 'Run fabric verification on infra-lab-fabric.' >&2
+if [[ $(hostname -s) != infra-lab-switches ]]; then
+  echo 'Run fabric verification on infra-lab-switches.' >&2
   exit 2
 fi
 

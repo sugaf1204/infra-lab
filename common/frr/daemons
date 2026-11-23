@@ -1,4 +1,9 @@
+# FRRouting デーモン起動設定
+# zebra: ルーティングテーブル（RIB）の管理および OS カーネル（FIB）との経路同期を行うコアデーモン
 zebra=yes
+# bgpd: BGP ルーティングプロトコルデーモン
 bgpd=yes
-staticd=yes
+# staticd: 静的経路デーモン（eBGP Unnumbered による動的経路制御のみを使用するため無効化）
+staticd=no
+# vtysh: 統合 CLI シェル（vtysh）を有効化
 vtysh_enable=yes

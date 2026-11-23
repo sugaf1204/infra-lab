@@ -13,6 +13,6 @@ bpf:
   masquerade: false
 bgpControlPlane:
   enabled: true
-kubeProxyReplacement: false
+kubeProxyReplacement: true
 operator:
   replicas: 1

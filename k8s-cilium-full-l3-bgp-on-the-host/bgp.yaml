@@ -1,3 +1,5 @@
+# Cilium BGP Control Plane 設定
+# Service (LoadBalancer IP) の BGP 広報定義
 apiVersion: cilium.io/v2
 kind: CiliumBGPAdvertisement
 metadata:
@@ -6,6 +8,7 @@ metadata:
     lab: cilium-l3
 spec:
   advertisements:
+    # Service の LoadBalancerIP を BGP で広報
     - advertisementType: Service
       service:
         addresses:
@@ -14,11 +17,13 @@ spec:
         matchLabels:
           lab: cilium-l3
 ---
+# Cilium からホスト上の FRR へのピア接続プロファイル
 apiVersion: cilium.io/v2
 kind: CiliumBGPPeerConfig
 metadata:
   name: host-frr
 spec:
+  # マルチホップ eBGP（127.0.0.2 -> 127.0.0.1）
   ebgpMultihop: 2
   timers:
     connectRetryTimeSeconds: 5
@@ -31,24 +36,28 @@ spec:
         matchLabels:
           lab: cilium-l3
 ---
+# クラスター全体の BGP インスタンス設定（全ノード共通）
 apiVersion: cilium.io/v2
 kind: CiliumBGPClusterConfig
 metadata:
-  name: control-plane-frr
+  name: host-frr
 spec:
   nodeSelector:
     matchLabels:
-      kubernetes.io/hostname: cilium-l3-node
+      kubernetes.io/os: linux
   bgpInstances:
     - name: host-frr
+      # Cilium 側のローカル ASN
       localASN: 65201
       peers:
         - name: host-frr
-          peerASN: 65202
+          # FRR 側の ASN（FRR の local-as 65200 no-prepend replace-as により 65200 として認識）
+          peerASN: 65200
           peerAddress: 127.0.0.1
           peerConfigRef:
             name: host-frr
 ---
+# control plane ノード（cilium-l3-node）用の送信元アドレス（127.0.0.2）オーバーライド
 apiVersion: cilium.io/v2
 kind: CiliumBGPNodeConfigOverride
 metadata:
@@ -60,24 +69,7 @@ spec:
         - name: host-frr
           localAddress: 127.0.0.2
 ---
-apiVersion: cilium.io/v2
-kind: CiliumBGPClusterConfig
-metadata:
-  name: worker-frr
-spec:
-  nodeSelector:
-    matchLabels:
-      kubernetes.io/hostname: cilium-l3-worker
-  bgpInstances:
-    - name: host-frr
-      localASN: 65201
-      peers:
-        - name: host-frr
-          peerASN: 65204
-          peerAddress: 127.0.0.1
-          peerConfigRef:
-            name: host-frr
----
+# worker ノード（cilium-l3-worker）用の送信元アドレス（127.0.0.2）オーバーライド
 apiVersion: cilium.io/v2
 kind: CiliumBGPNodeConfigOverride
 metadata:

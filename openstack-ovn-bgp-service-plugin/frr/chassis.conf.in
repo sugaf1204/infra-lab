@@ -1,63 +1,92 @@
-frr defaults traditional
+! データセンター向けプロファイル（BGP 設定やタイマーの最適化）
+frr defaults datacenter
 hostname @HOSTNAME@
 !
+! --- プレフィックスリスト & コミュニティリスト ---
+! デフォルトルート（0.0.0.0/0）のみ許可
 ip prefix-list FABRIC-DEFAULT permit 0.0.0.0/0
+! /32 ホストルートのみ許可
 ip prefix-list HOST-ROUTES permit 0.0.0.0/0 ge 32
+! chassis が広報する経路を識別するための BGP コミュニティ
 bgp community-list standard CHASSIS-HOSTS permit 65233:42
 !
+! --- ルートマップ ---
+! VM /32 および自ノード Loopback に BGP コミュニティ 65233:42 を付与
 route-map TAG-CHASSIS-HOST permit 10
  match ip address prefix-list HOST-ROUTES
  set community 65233:42 additive
 !
+! BGP コミュニティ 65233:42 を持つ経路のみを ToR へ広報
 route-map EXPORT-CHASSIS-HOST permit 10
  match community CHASSIS-HOSTS
 !
+! ToR から学習したデフォルトルートのみを VRF にインストール
 route-map INSTALL-DEFAULT permit 10
  match ip address prefix-list FABRIC-DEFAULT
 !
-! Keep BGP routes out of the VM management routing table.
+! BGP 経路が VM ホストの管理用メインルーティングテーブル（SSH 等）を上書き・破壊しないように遮断
 route-map KEEP-MANAGEMENT deny 10
 !
+! default VRF のカーネル FIB 反映時に管理テーブル保護用ルートマップを適用
 ip protocol bgp route-map KEEP-MANAGEMENT
 !
+! --- OVN 外部通信用 VRF（ovnvrf10）の設定 ---
+! ToR から学習したデフォルトルートを OVN の外部通信用テーブル 10 にインストール
 vrf ovnvrf10
  ip protocol bgp route-map INSTALL-DEFAULT
 exit-vrf
 !
+! --- BGP 設定: ovnvrf10 ---
 router bgp @ASN@ vrf ovnvrf10
  bgp router-id @NODE_IP@
  bgp bestpath as-path multipath-relax
  address-family ipv4 unicast
+  ! default VRF で ToR から学習したデフォルトルート等を取り込む
   import vrf default
+  ! ToR 2 台への ECMP（最大 2 パス）
   maximum-paths 2
  exit-address-family
 !
+! --- BGP 設定: ovnvrf42（OVN BGP プラグインが VM /32 を注入する VRF）---
 router bgp @ASN@ vrf ovnvrf42
  bgp router-id @NODE_IP@
  address-family ipv4 unicast
+  ! OVN BGP プラグインがカーネル（テーブル 42）に追加したローカル VM /32 を再配布し、コミュニティを付与
   redistribute kernel route-map TAG-CHASSIS-HOST
  exit-address-family
 !
+! --- BGP 設定: default VRF（ToR との eBGP Unnumbered ピアリング）---
 router bgp @ASN@
  bgp router-id @NODE_IP@
+ ! IPv4 ユニキャストの自動有効化を無効化
  no bgp default ipv4-unicast
+ ! 異なる AS からの経路でもパス長が同じであれば ECMP を許可
  bgp bestpath as-path multipath-relax
- no bgp ebgp-requires-policy
- neighbor br-bgp-0 interface remote-as 65232
- neighbor br-bgp-0 timers 3 9
- neighbor br-bgp-1 interface remote-as 65234
- neighbor br-bgp-1 timers 3 9
+ !
+ ! 対向 ToR スイッチ向けピアグループ
+ neighbor TORS peer-group
+ neighbor TORS remote-as external
+ neighbor TORS timers 3 9
+ !
+ ! OVS ブリッジポート経由の eBGP Unnumbered ピアリング
+ neighbor br-bgp-0 interface peer-group TORS
+ neighbor br-bgp-1 interface peer-group TORS
  !
  address-family ipv4 unicast
+  ! ovnvrf42 からコミュニティ付与済みの VM /32 経路を取り込む
   import vrf ovnvrf42
+  ! 自ノードのループバック IP にもコミュニティを付与して広報対象に追加
   network @NODE_IP@/32 route-map TAG-CHASSIS-HOST
+  ! ToR 2 台への ECMP（最大 2 パス）
   maximum-paths 2
-  neighbor br-bgp-0 activate
-  neighbor br-bgp-0 prefix-list FABRIC-DEFAULT in
-  neighbor br-bgp-0 send-community standard
-  neighbor br-bgp-0 route-map EXPORT-CHASSIS-HOST out
-  neighbor br-bgp-1 activate
-  neighbor br-bgp-1 prefix-list FABRIC-DEFAULT in
-  neighbor br-bgp-1 send-community standard
-  neighbor br-bgp-1 route-map EXPORT-CHASSIS-HOST out
+  !
+  ! ToR ピアを有効化
+  neighbor TORS activate
+  ! ToR からはデフォルトルートのみ受信
+  neighbor TORS prefix-list FABRIC-DEFAULT in
+  ! ToR に BGP コミュニティを送信
+  neighbor TORS send-community standard
+  ! コミュニティを持つ自ノード Loopback および VM /32 のみを ToR に広報
+  neighbor TORS route-map EXPORT-CHASSIS-HOST out
  exit-address-family
+!

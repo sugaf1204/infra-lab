@@ -37,7 +37,6 @@ case "$role:$action" in
   *) printf 'Action %s is unavailable on the %s VM.\n' "$action" "$role" >&2; exit 2 ;;
 esac
 
-host_frr=clab-cilium-l3-host-frr
 tors=(clab-cilium-l3-tor1 clab-cilium-l3-tor2)
 client=clab-cilium-l3-client
 networkd_dropin=/etc/systemd/networkd.conf.d/90-infra-lab-cilium.conf
@@ -49,24 +48,6 @@ client_ip=10.220.240.14
 export KUBECONFIG=/etc/kubernetes/admin.conf
 export CLAB_RUNTIME=docker DOCKER_HOST=unix:///var/run/docker.sock
 unset DOCKER_CONTEXT
-
-forward_rule() {
-  local operation=$1
-  shift
-  if [[ $operation == add ]]; then
-    iptables -C DOCKER-USER "$@" 2>/dev/null || iptables -I DOCKER-USER 1 "$@"
-  elif iptables -C DOCKER-USER "$@" 2>/dev/null; then
-    iptables -D DOCKER-USER "$@"
-  fi
-}
-
-configure_forwarding() {
-  local uplink
-  for uplink in "${uplinks[@]}"; do
-    forward_rule "$1" -i "$uplink" -d "$pod_network" -j ACCEPT
-    forward_rule "$1" -o "$uplink" -s "$pod_network" -j ACCEPT
-  done
-}
 
 preserve_lab_routes() {
   if systemctl is-active --quiet systemd-networkd && ! cmp -s networkd-cilium-lab.conf "$networkd_dropin"; then
@@ -97,15 +78,19 @@ fabric_down() {
   containerlab destroy --topo topology.clab.yml --cleanup
 }
 
+configure_host_frr() {
+  sed -i -e 's/^bgpd=no$/bgpd=yes/' -e 's/^staticd=yes$/staticd=no/' /etc/frr/daemons
+  sed -e "s/@NODE_IP@/$node_ip/g" -e "s/@ASN@/$asn/g" frr/node.conf.in > "$state/frr.conf"
+  install -o frr -g frr -m 0640 "$state/frr.conf" /etc/frr/frr.conf
+  systemctl enable --now frr.service
+  systemctl restart frr.service
+}
+
 prepare_node() {
   if [[ ! -f $state/owned ]]; then
     if [[ -e /etc/kubernetes/admin.conf || -e /etc/kubernetes/kubelet.conf ||
-          -e /etc/kubernetes/manifests/kube-apiserver.yaml ]] ||
-       docker container inspect "$host_frr" >/dev/null 2>&1 ||
-       docker container inspect "${tors[0]}" >/dev/null 2>&1 ||
-       docker container inspect "${tors[1]}" >/dev/null 2>&1 ||
-       docker container inspect "$client" >/dev/null 2>&1; then
-      echo 'An existing Kubernetes cluster or lab topology must be removed first.' >&2
+          -e /etc/kubernetes/manifests/kube-apiserver.yaml ]]; then
+      echo 'An existing Kubernetes cluster must be removed first.' >&2
       return 1
     fi
     touch "$state/owned"
@@ -117,10 +102,9 @@ prepare_node() {
   fi
 
   modprobe overlay
-  modprobe br_netfilter
   preserve_lab_routes
   ip address replace "$node_ip/32" dev lo
-  sysctl -w net.ipv4.ip_forward=1
+  sysctl -qw net.ipv4.ip_forward=1 net.ipv4.fib_multipath_hash_policy=1
   local uplink
   for uplink in "${uplinks[@]}"; do ip link set "$uplink" up; done
   if ip -j -4 route show default | jq -e 'any(.[]; .protocol != "bgp")' >/dev/null; then
@@ -131,19 +115,7 @@ prepare_node() {
   install -m 0644 containerd-cilium-lab.service /etc/systemd/system/
   systemctl daemon-reload
   systemctl enable --now containerd-cilium-lab.service kubelet.service
-
-  if [[ ! -f $state/topology-ready ]]; then
-    if [[ -f $state/topology-started ]]; then
-      echo "Earlier topology deployment was incomplete. Run '$0 down' before retrying." >&2
-      return 1
-    fi
-    touch "$state/topology-started"
-    sed -e "s/@NODE_IP@/$node_ip/g" -e "s/@ASN@/$asn/g" frr/node.conf.in > "$state/frr.conf"
-    chmod 0644 "$state/frr.conf"
-    containerlab deploy --topo node.clab.yml
-    touch "$state/topology-ready"
-  fi
-  configure_forwarding add
+  configure_host_frr
 }
 
 prepare() { prepare_node; }
@@ -175,7 +147,7 @@ networking:
   serviceSubnet: 10.221.0.0/16
 EOF
     touch "$state/kubeadm-started"
-    kubeadm init --config "$state/init.yaml" --skip-token-print
+    kubeadm init --config "$state/init.yaml" --skip-phases=addon/kube-proxy --skip-token-print
     touch "$state/kubeadm-ready"
   fi
 
@@ -288,9 +260,10 @@ set_tor_links() {
 verify_node() {
   local other_ip=$worker_ip
   if [[ $role == worker ]]; then other_ip=$control_ip; fi
-  ip -j -4 address show dev lo | jq -e --arg ip "$node_ip"     '[.[].addr_info[] | select(.scope == "global")] | length == 1 and .[0].local == $ip and .[0].prefixlen == 32' >/dev/null
-  ip -d -j link show | jq -e 'all(.[]; .linkinfo.info_kind != "vrf")' >/dev/null
-  docker exec "$host_frr" vtysh -c 'show bgp ipv4 unicast summary json' |
+  ip -j -4 address show dev lo | jq -e --arg ip "$node_ip" \
+    '[.[].addr_info[] | select(.scope == "global")] | length == 1 and .[0].local == $ip and .[0].prefixlen == 32' >/dev/null
+  ip -d -j link show | jq -e 'all(.[]; .linkinfo.info_kind != "vrf" and .linkinfo.info_kind != "bridge")' >/dev/null
+  vtysh -c 'show bgp ipv4 unicast summary json' |
     jq -e '
       .peers as $p | ($p["127.0.0.2"].state == "Established" and $p["127.0.0.2"].remoteAs == 65201)
       and all(["k8s-tor1","k8s-tor2"][]; $p[.].state == "Established" and $p[.].idType == "interface")
@@ -302,7 +275,11 @@ verify_node() {
 }
 
 fabric_traffic() {
-  local interfaces=$1 address
+  local interfaces=$1 tor address
+  shift
+  for tor in "$@"; do
+    check_routes '["eth1","eth3"]' docker exec "$tor" ip -j -4 route show exact "$vip/32" || return 1
+  done
   for address in "$control_ip" "$worker_ip" "$vip"; do
     check_routes "$interfaces" docker exec "$client" ip -j -4 route show exact "$address/32" || return 1
   done
@@ -314,29 +291,30 @@ fabric_traffic() {
 wait_for_fabric_traffic() {
   local attempt
   for ((attempt = 0; attempt < 30; attempt++)); do
-    if fabric_traffic "$1"; then return 0; fi
+    if fabric_traffic "$@"; then return 0; fi
     sleep 2
   done
   return 1
 }
 
 verify_fabric() {
-  local index
+  local index surviving_tor
   check_peers "$client" '["eth1","eth2"]'
   for index in "${!tors[@]}"; do
     check_peers "${tors[index]}" '["eth1","eth2","eth3"]'
   done
-  wait_for_fabric_traffic '["eth1","eth2"]'
+  wait_for_fabric_traffic '["eth1","eth2"]' "${tors[@]}"
   if [[ $failover == --failover ]]; then
     trap 'for tor in "${tors[@]}"; do set_tor_links "$tor" up || true; done' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
     for index in "${!tors[@]}"; do
+      surviving_tor=${tors[1 - index]}
       printf 'Testing failover with %s down\n' "${tors[index]}"
       set_tor_links "${tors[index]}" down
-      wait_for_fabric_traffic "[\"eth$((2 - index))\"]"
+      wait_for_fabric_traffic "[\"eth$((2 - index))\"]" "$surviving_tor"
       set_tor_links "${tors[index]}" up
-      wait_for_fabric_traffic '["eth1","eth2"]'
+      wait_for_fabric_traffic '["eth1","eth2"]' "${tors[@]}"
     done
     trap - EXIT INT TERM
   fi
@@ -350,6 +328,10 @@ probe_info() {
 verify() {
   local control_pod control_pod_ip worker_pod worker_pod_ip worker_cilium result pod
   kubectl wait --for=condition=Ready --timeout=180s "node/$control_node" "node/$worker_node"
+  if kubectl -n kube-system get daemonset kube-proxy >/dev/null 2>&1; then
+    echo 'kube-proxy DaemonSet must not be present.' >&2
+    return 1
+  fi
   kubectl -n lab-probe rollout status daemonset/probe --timeout=180s
   kubectl -n lab-probe wait --timeout=120s \
     --for="jsonpath={.status.loadBalancer.ingress[0].ip}=$vip" service/probe
@@ -358,9 +340,9 @@ verify() {
       [.items[].status.addresses[] | select(.type == "InternalIP").address] | sort == [$control,$worker]
     ' >/dev/null
   result=$(probe_info "$control_node")
-  IFS=$'	' read -r control_pod control_pod_ip <<< "$result"
+  IFS=$'\t' read -r control_pod control_pod_ip <<< "$result"
   result=$(probe_info "$worker_node")
-  IFS=$'	' read -r worker_pod worker_pod_ip <<< "$result"
+  IFS=$'\t' read -r worker_pod worker_pod_ip <<< "$result"
   worker_cilium=$(kubectl -n kube-system get pods -l k8s-app=cilium \
     --field-selector "spec.nodeName=$worker_node,status.phase=Running" \
     -o json | jq -er '.items | select(length == 1) | .[0].metadata.name')
@@ -382,11 +364,7 @@ down() {
     rm -f /etc/cni/net.d/05-cilium.conflist
     rm -f "$state/kubeadm-started" "$state/kubeadm-ready"
   fi
-  configure_forwarding remove
-  if [[ -f $state/topology-started ]]; then
-    containerlab destroy --topo node.clab.yml --cleanup
-    rm -f "$state/topology-started" "$state/topology-ready"
-  fi
+  systemctl stop frr.service 2>/dev/null || true
   systemctl disable --now kubelet.service
   if [[ -f /etc/systemd/system/containerd-cilium-lab.service ]]; then
     systemctl disable --now containerd-cilium-lab.service
@@ -400,7 +378,7 @@ down() {
       systemctl restart systemd-networkd
     fi
   fi
-  rm -f "$state/owned" "$state/init.yaml"
+  rm -f "$state/owned" "$state/init.yaml" "$state/frr.conf"
 }
 
 "${action//-/_}"

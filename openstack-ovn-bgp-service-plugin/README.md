@@ -21,7 +21,7 @@ ToR と spine は fabric VM に置く。controller と追加 compute はそれ�
 
 chassis FRR は OVS ブリッジのインターフェース名で両 ToR とピアを張る。ループバックは controller が `203.0.113.31/32`、compute が `203.0.113.32/32`。OVN がテーブル 42 に追加したローカル VM /32 を chassis が両 ToR に広告する。全6本の BGP ピアは eBGP Unnumbered。両 chassis は、IPv6 リンクローカル next hop の IPv4 デフォルト `0.0.0.0/0` を両 ToR から学習し、OVN が使用する `ovnvrf10` のテーブル 10 に入れる。spine の IPv4 プローブ /32 は ToR が学習し、chassis はデフォルトを使って到達する。`ovnvrf42` と `ovnvrf10` はプラグインが OVN と FRR の経路交換に使う。
 
-両 chassis が使う [FRR テンプレート](frr/chassis.conf.in) は、ホスト名・ASN・ループバック IP を `configure` で受け取る。FRR は OVN の VRF 42 から再配布した IPv4 /32 と自ノードのループバックに BGP community `65233:42` を付与する。両 ToR はその community を持つ /32 を chassis 側ピアから受け付け、spine に広告する。テナント CIDR は Neutron のサブネットで定義するため、サブネット変更に合わせた FRR フィルターの更新は不要。
+両 chassis が使う [FRR テンプレート](frr/chassis.conf.in) は、ホスト名・ASN・ループバック IP を `configure` で受け取る。FRR は OVN の VRF 42 から再配布した IPv4 /32 と自ノードのループバックに BGP community `65233:42` を付与する。両 ToR はその community を持つ /32 を chassis 側ピアから受け付け、spine に広告する。全ノードで `frr defaults datacenter`・`remote-as external`・`timers 3 9`・`net.ipv4.fib_multipath_hash_policy=1` に統一し、各ノードの FRR 設定には自ノードのループバック IP 以外の IP やテナント CIDR を記述しない。本ラボの主眼は Dual-ToR と OVN BGP による VM /32 広告・撤回・ToR 片系断であり、spine 1 台でも spine→ToR の ECMP と ToR 片系断を検証できるため、構成をシンプルに保つ目的で spine は 1 台構成を採用している。
 
 ## ラボへの接続
 
@@ -136,10 +136,11 @@ sudo ./verify.sh chassis
 
 Neutron の `ovn-bgp` プラグインは、flat network の論理スイッチと論理ルーター `bgp-lr-main` を接続するポートのアドレス情報を OVN の `DHCP_Options` テーブルから取得する。サブネットの DHCP を有効にしてゲートウェイ（`10.53.0.1`）を設定することで、OVN は必要な DHCP オプションと論理ルーターポートを生成し、テナント VM 間の転送および spine からの到達性を確保する。ゲスト VM は OVN の分散 DHCP レスポンダーから自動的に IP とデフォルトルートを取得する。 [BGP プラグイン](https://github.com/openstack/neutron/blob/b82b437de7/neutron/services/bgp/commands.py#L85-L100) · [OVN DHCP の実装](https://github.com/openstack/neutron/blob/b82b437de7/neutron/plugins/ml2/drivers/ovn/mech_driver/ovsdb/ovn_client.py#L2983-L3013)
 
-## 過去の確認結果
+## 過去の確認結果・未検証の項目
 
 - 広告フィルターの更新時に、別 CIDR の一時 VM `10.54.0.22/32` が両 ToR と spine に伝わり、VM 削除後に撤回されることを確認した。
 - 追加 compute から両 ToR のリンクローカルまで疎通を確認した。Nova 登録と追加 compute 上のゲストの検証は未完了。
+- `remote-as external`・`frr defaults datacenter` 統一・`PROBE` prefix-list 排除・`fib_multipath_hash_policy=1`・`verify.sh` の fabric ホスト名修正（`infra-lab-switches`）適用後の実機再検証は未完了。
 
 ## 撤去
 

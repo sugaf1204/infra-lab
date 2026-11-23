@@ -110,8 +110,14 @@ RequiredForOnline=no
 [Network]
 KeepMaster=yes
 DHCP=no
-IPv6AcceptRA=no
+IPv6AcceptRA=yes
 LinkLocalAddressing=ipv6
+[IPv6AcceptRA]
+UseGateway=no
+UseAutonomousPrefix=no
+UseOnLinkPrefix=no
+UseDNS=no
+UseDomains=no
 EOF
     links+=("$link")
     ip link set "$link" up
@@ -120,6 +126,7 @@ EOF
     networkctl reload
     networkctl reconfigure "${links[@]}"
   fi
+  sysctl -qw net.ipv4.fib_multipath_hash_policy=1
   for link in "${links[@]}"; do
     # Keep kernel neighbor discovery while excluding RA default routes.
     sysctl -qw "net.ipv6.conf.$link.accept_ra_defrtr=0" "net.ipv6.conf.$link.accept_ra=2"

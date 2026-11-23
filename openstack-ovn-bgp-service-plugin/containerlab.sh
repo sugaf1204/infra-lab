@@ -47,15 +47,7 @@ esac
 bridges=(br-bgp-0 br-bgp-1)
 uplinks=(ovn-tor1 ovn-tor2)
 
-remove_legacy_ports() {
-  local index
-  for index in "${!uplinks[@]}"; do
-    ovs-vsctl --if-exists del-port "${bridges[index]}" "ovn-ctl-tor$((index + 1))"
-  done
-}
-
 if [[ $1 == destroy ]]; then
-  if [[ $current_host == infra-lab-openstack ]]; then remove_legacy_ports; fi
   for index in "${!uplinks[@]}"; do
     ovs-vsctl --if-exists del-port "${bridges[index]}" "${uplinks[index]}"
   done
@@ -65,15 +57,9 @@ if [[ $1 == destroy ]]; then
   exit 0
 fi
 
-# Migrate a controller provisioned before chassis NIC names were unified.
-if [[ $current_host == infra-lab-openstack ]] &&
-   { ip link show ovn-ctl-tor1 >/dev/null 2>&1 || ip link show ovn-ctl-tor2 >/dev/null 2>&1; }; then
-  remove_legacy_ports
-  ../common/links.sh name openstack
-fi
-
 for uplink in "${uplinks[@]}"; do ip link show "$uplink" >/dev/null; done
 ip -4 address replace "$node_ip" dev lo
+sysctl -qw net.ipv4.fib_multipath_hash_policy=1
 ovs-vsctl --may-exist add-br br-ex
 ip link set br-ex up
 for index in "${!uplinks[@]}"; do
@@ -102,7 +88,7 @@ fi
 if [[ -z $(ip -4 rule show pref 10111) ]]; then
   ip -4 rule add pref 10111 from "$node_ip" unreachable
 fi
-sed -i 's/^bgpd=no$/bgpd=yes/' /etc/frr/daemons
+sed -i -e 's/^bgpd=no$/bgpd=yes/' -e 's/^staticd=yes$/staticd=no/' /etc/frr/daemons
 frr_config=$(mktemp)
 trap 'rm -f "$frr_config"' EXIT
 sed -e "s/@HOSTNAME@/$current_host/g" -e "s/@ASN@/$node_asn/g" \

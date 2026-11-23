@@ -48,19 +48,17 @@ check_peers() {
 }
 
 check_default_traffic() {
-  local host=$1 source=$2 target
-  for target in 10.211.255.3 10.211.255.4; do
-    fabric_ip "$host" get fibmatch "$target" from "$source" |
+  local host=$1 target
+  for target in "$2" 10.211.255.3 10.211.255.4; do
+    fabric_ip "$host" get fibmatch "$target" |
       jq -e 'any(.[]; (.dst == "default" or .dst == "0.0.0.0/0") and .protocol == "bgp")' >/dev/null
-    node "$host" ping -I "$source" -c 3 -W 2 "$target"
+    node "$host" ping -c 3 -W 2 "$target"
   done
 }
 
 check_traffic() {
-  node host1 ping -I 10.211.1.2 -c 3 -W 2 10.211.2.2
-  node host2 ping -I 10.211.2.2 -c 3 -W 2 10.211.1.2
-  check_default_traffic host1 10.211.1.2
-  check_default_traffic host2 10.211.2.2
+  check_default_traffic host1 10.211.2.2
+  check_default_traffic host2 10.211.1.2
 }
 
 case "${1:-}" in
@@ -73,8 +71,6 @@ check_host_routes() {
   for host in host1 host2; do
     wait_for_nexthops "$host" 0.0.0.0/0 "$interfaces"
   done
-  wait_for_nexthops host1 10.211.2.2/32 "$interfaces"
-  wait_for_nexthops host2 10.211.1.2/32 "$interfaces"
 }
 
 check_dual_tor() {

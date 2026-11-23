@@ -1,59 +1,88 @@
-frr defaults traditional
+! データセンター向けプロファイル（BGP 設定やタイマーの最適化）
+frr defaults datacenter
 hostname cilium-host-frr
 !
+! --- プレフィックスリスト（経路フィルタ） ---
+! 自ノードのループバック IP のみを許可
 ip prefix-list NODE-LOOPBACK permit @NODE_IP@/32
-ip prefix-list PODS permit 10.220.0.0/20 ge 32
-ip prefix-list VIPS permit 10.220.250.0/24 ge 32
-ip prefix-list FABRIC permit 0.0.0.0/0
-ip prefix-list EXPORT permit 10.220.0.0/20 ge 32
-ip prefix-list EXPORT permit 10.220.250.0/24 ge 32
-ip prefix-list EXPORT permit @NODE_IP@/32
+! Pod IP や Service VIP など /32 ホストルートのみを許可
+ip prefix-list HOST-ROUTES permit 0.0.0.0/0 ge 32
+! デフォルトルート（0.0.0.0/0）のみを許可
+ip prefix-list DEFAULT-ONLY permit 0.0.0.0/0
+! すべての経路を拒否（Cilium への不要な経路広告を抑止）
 ip prefix-list DENY-ALL deny 0.0.0.0/0 le 32
 !
+! --- ルートマップ ---
+! connected 経路から自ノードのループバック IP のみを抽出して BGP に再配布
 route-map NODE-LOOPBACK permit 10
  match ip address prefix-list NODE-LOOPBACK
- set ip next-hop @NODE_IP@
 !
+! カーネル経路から Cilium が生成した Pod /32 ルートのみを抽出して BGP に再配布
 route-map PODS permit 10
- match ip address prefix-list PODS
+ match ip address prefix-list HOST-ROUTES
 !
+! Cilium から学習した Service VIP (/32) の next-hop を自ノード IP に書き換え（ToR 側への転送先を自ノードにする）
 route-map CILIUM-VIPS permit 10
- match ip address prefix-list VIPS
+ match ip address prefix-list HOST-ROUTES
  set ip next-hop @NODE_IP@
 !
+! ToR から学習したデフォルトルートをカーネル FIB に導入する際、
+! 送信元 IP（src）として自ノードのループバック IP を設定（eBGP Unnumbered 対策）
 route-map INSTALL-FABRIC permit 10
- match ip address prefix-list FABRIC
+ match ip address prefix-list DEFAULT-ONLY
  set src @NODE_IP@
 !
+! BGP 学習経路のカーネル反映時に上記ルートマップを適用
 ip protocol bgp route-map INSTALL-FABRIC
 !
+! --- BGP 設定 ---
 router bgp @ASN@
  bgp router-id @NODE_IP@
+ ! IPv4 ユニキャストの自動有効化を無効化
  no bgp default ipv4-unicast
- ! The VIP update has the local Cilium address as its next hop.
+ ! Cilium からの VIP 更新がローカルアドレス（martian）を next-hop に持っていても受け入れる
  bgp allow-martian-nexthop
+ !
+ ! --- Cilium との内部 BGP ピアリング（127.0.0.2 -> 127.0.0.1）---
  neighbor CILIUM peer-group
  neighbor CILIUM remote-as 65201
+ ! 全ノード共通の CiliumBGPClusterConfig（peer ASN 65200 を指定）に合わせるため、
+ ! FRR 側で ASN を 65200 に置き換えて見せる
+ neighbor CILIUM local-as 65200 no-prepend replace-as
  neighbor CILIUM update-source lo
  neighbor CILIUM ebgp-multihop 2
+ ! Cilium (127.0.0.2) からの接続をリッスン
  bgp listen range 127.0.0.2/32 peer-group CILIUM
  !
+ ! --- ToR スイッチとの外部 BGP ピアリング ---
  bgp bestpath as-path multipath-relax
- neighbor k8s-tor1 interface remote-as 65101
- neighbor k8s-tor1 timers 3 9
- neighbor k8s-tor2 interface remote-as 65102
- neighbor k8s-tor2 timers 3 9
+ neighbor TORS peer-group
+ neighbor TORS remote-as external
+ neighbor TORS timers 3 9
+ ! ToR1（k8s-tor1）および ToR2（k8s-tor2）との eBGP Unnumbered
+ neighbor k8s-tor1 interface peer-group TORS
+ neighbor k8s-tor2 interface peer-group TORS
+ !
  address-family ipv4 unicast
+  ! 自ノードの Loopback IP（connected）を BGP に再配布
   redistribute connected route-map NODE-LOOPBACK
+  ! Cilium の Pod /32（kernel）を BGP に再配布
   redistribute kernel route-map PODS
+  !
+  ! Cilium ピアを有効化
   neighbor CILIUM activate
+  ! Cilium から受信した VIP の next-hop を自ノード IP に設定
   neighbor CILIUM route-map CILIUM-VIPS in
+  ! Cilium へは経路を広告しない（不要なループやルーティング混乱を防止）
   neighbor CILIUM prefix-list DENY-ALL out
-  neighbor k8s-tor1 activate
-  neighbor k8s-tor1 prefix-list FABRIC in
-  neighbor k8s-tor1 prefix-list EXPORT out
-  neighbor k8s-tor2 activate
-  neighbor k8s-tor2 prefix-list FABRIC in
-  neighbor k8s-tor2 prefix-list EXPORT out
+  !
+  ! ToR ピアを有効化
+  neighbor TORS activate
+  ! ToR からはデフォルトルートのみ受信
+  neighbor TORS prefix-list DEFAULT-ONLY in
+  ! ToR へは Node IP、Pod IP、VIP の /32 のみを広報
+  neighbor TORS prefix-list HOST-ROUTES out
+  ! ToR 2 台への ECMP（最大 2 パス）
   maximum-paths 2
  exit-address-family
+!
