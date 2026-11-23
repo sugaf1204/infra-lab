@@ -7,15 +7,16 @@ worker_node=cilium-l3-worker
 control_ip=10.220.255.10
 worker_ip=10.220.255.11
 vip=10.220.250.10
-client_ip=10.220.240.14
-tors=(clab-cilium-l3-tor1 clab-cilium-l3-tor2)
-client=clab-cilium-l3-client
-nodes=(clab-cilium-l3-node0 clab-cilium-l3-node1)
+client_ip=10.211.1.2
+external_probe=${EXTERNAL_PROBE:-1.1.1.1}
+tors=(clab-full-l3-ip-clos-leaf1 clab-full-l3-ip-clos-leaf2)
+client=clab-full-l3-ip-clos-host1
+nodes=(clab-full-l3-ip-clos-node0 clab-full-l3-ip-clos-node1)
 
 check_peers() {
   docker exec "$1" vtysh -c 'show bgp ipv4 unicast summary json' |
     jq -e --argjson interfaces "$2" '
-      .peers | keys == $interfaces and all(.[]; .state == "Established" and .idType == "interface")
+      .peers as $p | all($interfaces[]; $p[.].state == "Established" and $p[.].idType == "interface")
     ' >/dev/null
 }
 
@@ -37,22 +38,27 @@ check_node() {
       .peers as $p | ($p["127.0.0.2"].state == "Established" and $p["127.0.0.2"].remoteAs == 65201)
       and all(["k8s-tor1","k8s-tor2"][]; $p[.].state == "Established" and $p[.].idType == "interface")
     ' >/dev/null
+  if docker exec "$ctr" vtysh -c 'show bgp ipv4 unicast' | grep -q '100\.64\.0\.'; then
+    echo "NAT IP leaked to $ctr BGP table" >&2
+    return 1
+  fi
+  if docker exec "$ctr" ip -4 route show | grep -q '100\.64\.0\.'; then
+    echo "NAT IP leaked to $ctr FIB" >&2
+    return 1
+  fi
   check_routes '["k8s-tor1","k8s-tor2"]' docker exec "$ctr" ip -j -4 route show default
   docker exec "$ctr" ip -j -4 route show default | jq -e 'length == 1 and .[0].protocol == "bgp"' >/dev/null
   docker exec "$ctr" ip -j -4 route get fibmatch "$other_ip" | jq -e '.[0].dst == "default"' >/dev/null
-  docker exec "$ctr" ip -j -4 route get fibmatch "$client_ip" | jq -e '.[0].dst == "default"' >/dev/null
+  docker exec "$ctr" ip -j -4 route get fibmatch "$external_probe" | jq -e '.[0].dst == "default"' >/dev/null
   docker exec "$ctr" ping -c 2 -W 2 "$other_ip"
   docker exec "$ctr" ping -c 2 -W 2 "$client_ip"
+  docker exec "$ctr" ping -c 2 -W 2 "$external_probe"
 }
 
 fabric_traffic() {
-  local interfaces=$1 tor address
-  shift
+  local tor
   for tor in "$@"; do
-    check_routes '["eth1","eth3"]' docker exec "$tor" ip -j -4 route show exact "$vip/32" || return 1
-  done
-  for address in "$control_ip" "$worker_ip" "$vip"; do
-    check_routes "$interfaces" docker exec "$client" ip -j -4 route show exact "$address/32" || return 1
+    check_routes '["eth5","eth6"]' docker exec "$tor" ip -j -4 route show exact "$vip/32" || return 1
   done
   docker exec "$client" ping -c 2 -W 2 "$control_ip" &&
     docker exec "$client" ping -c 2 -W 2 "$worker_ip" &&
@@ -68,9 +74,9 @@ wait_for_fabric_traffic() {
   return 1
 }
 
-set_tor_links() {
+set_tor_k8s_links() {
   local interface
-  for interface in eth1 eth2 eth3; do
+  for interface in eth5 eth6; do
     docker exec "$1" ip link set "$interface" "$2"
   done
 }
@@ -99,25 +105,25 @@ IFS=$'\t' read -r control_pod control_pod_ip <<< "$(probe_info "$control_node")"
 IFS=$'\t' read -r worker_pod worker_pod_ip <<< "$(probe_info "$worker_node")"
 for pod in "$control_pod" "$worker_pod"; do
   kubectl -n lab-probe exec "$pod" -- ping -c 2 -W 2 "$client_ip"
+  kubectl -n lab-probe exec "$pod" -- ping -c 2 -W 2 "$external_probe"
 done
 kubectl -n lab-probe exec "$control_pod" -- ping -c 2 -W 2 "$worker_pod_ip"
 kubectl -n lab-probe exec "$worker_pod" -- ping -c 2 -W 2 "$control_pod_ip"
 
-check_peers "$client" '["eth1","eth2"]'
 for tor in "${tors[@]}"; do
-  check_peers "$tor" '["eth1","eth2","eth3"]'
+  check_peers "$tor" '["eth1","eth2","eth5","eth6"]'
 done
-wait_for_fabric_traffic '["eth1","eth2"]' "${tors[@]}"
+wait_for_fabric_traffic "${tors[@]}"
 
 if [[ $failover == --failover ]]; then
-  trap 'for tor in "${tors[@]}"; do set_tor_links "$tor" up || true; done' EXIT
+  trap 'for tor in "${tors[@]}"; do set_tor_k8s_links "$tor" up || true; done' EXIT
   for index in "${!tors[@]}"; do
     surviving_tor=${tors[1 - index]}
-    printf 'Testing failover with %s down\n' "${tors[index]}"
-    set_tor_links "${tors[index]}" down
-    wait_for_fabric_traffic "[\"eth$((2 - index))\"]" "$surviving_tor"
-    set_tor_links "${tors[index]}" up
-    wait_for_fabric_traffic '["eth1","eth2"]' "${tors[@]}"
+    printf 'Testing failover with %s K8s links down\n' "${tors[index]}"
+    set_tor_k8s_links "${tors[index]}" down
+    wait_for_fabric_traffic "$surviving_tor"
+    set_tor_k8s_links "${tors[index]}" up
+    wait_for_fabric_traffic "${tors[@]}"
   done
   trap - EXIT
 fi

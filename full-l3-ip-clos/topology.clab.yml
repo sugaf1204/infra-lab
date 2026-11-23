@@ -1,25 +1,62 @@
 name: full-l3-ip-clos
 mgmt:
-  network: full-l3-ip-clos-mgmt
-  skip-when-unused: true
+  network: clab-full-l3-ip-clos-mgmt
+  ipv4-subnet: 172.20.20.0/24
 topology:
-  kinds:
-    linux:
-      network-mode: none
-      image: quay.io/frrouting/frr:10.4.1
   groups:
     router:
+      network-mode: none
+      image: quay.io/frrouting/frr:10.4.1
       sysctls:
         net.ipv4.ip_forward: 1
         net.ipv4.fib_multipath_hash_policy: 1
         net.ipv6.conf.all.disable_ipv6: 0
         net.ipv6.conf.default.disable_ipv6: 0
         net.ipv6.conf.default.accept_ra_defrtr: 0
-        net.ipv4.conf.all.rp_filter: 0
-        net.ipv4.conf.default.rp_filter: 0
       binds:
         - ../common/frr/daemons:/etc/frr/daemons:ro
+    spine:
+      network-mode: none
+      image: quay.io/frrouting/frr:10.4.1
+      sysctls:
+        net.ipv4.ip_forward: 1
+        net.ipv4.fib_multipath_hash_policy: 1
+        net.ipv6.conf.all.disable_ipv6: 0
+        net.ipv6.conf.default.disable_ipv6: 0
+        net.ipv6.conf.default.accept_ra_defrtr: 0
+      binds:
+        - frr/spine-daemons:/etc/frr/daemons:ro
+    k8s-frr:
+      image: quay.io/frrouting/frr:10.4.1
+      binds:
+        - ../common/frr/daemons:/etc/frr/daemons:ro
+      exec:
+        - sysctl -w net.ipv4.ip_forward=1 net.ipv4.fib_multipath_hash_policy=1 net.ipv4.conf.all.rp_filter=0 net.ipv4.conf.default.rp_filter=0 net.ipv4.conf.k8s-tor1.rp_filter=0 net.ipv4.conf.k8s-tor2.rp_filter=0 net.ipv6.conf.all.disable_ipv6=0 net.ipv6.conf.default.disable_ipv6=0 net.ipv6.conf.default.accept_ra_defrtr=0
+        - ip route replace 127.0.0.0/8 dev lo scope link
+        - sh -c 'ip route del default dev eth0 || true'
   nodes:
+    nat:
+      kind: linux
+      image: quay.io/frrouting/frr:10.4.1
+      sysctls:
+        net.ipv4.ip_forward: 1
+        net.ipv4.fib_multipath_hash_policy: 1
+        net.ipv6.conf.all.disable_ipv6: 0
+        net.ipv6.conf.default.disable_ipv6: 0
+        net.ipv6.conf.default.accept_ra_defrtr: 0
+      binds:
+        - ../common/frr/daemons:/etc/frr/daemons:ro
+        - rendered/nat.conf:/etc/frr/frr.conf:ro
+    spine1:
+      kind: linux
+      group: spine
+      binds:
+        - rendered/spine1.conf:/etc/frr/frr.conf:ro
+    spine2:
+      kind: linux
+      group: spine
+      binds:
+        - rendered/spine2.conf:/etc/frr/frr.conf:ro
     leaf1:
       kind: linux
       group: router
@@ -30,16 +67,6 @@ topology:
       group: router
       binds:
         - rendered/leaf2.conf:/etc/frr/frr.conf:ro
-    spine1:
-      kind: linux
-      group: router
-      binds:
-        - rendered/spine1.conf:/etc/frr/frr.conf:ro
-    spine2:
-      kind: linux
-      group: router
-      binds:
-        - rendered/spine2.conf:/etc/frr/frr.conf:ro
     host1:
       kind: linux
       group: router
@@ -50,12 +77,30 @@ topology:
       group: router
       binds:
         - rendered/host2.conf:/etc/frr/frr.conf:ro
+    node0:
+      kind: linux
+      group: k8s-frr
+      network-mode: container:cilium-l3-control-plane
+      binds:
+        - rendered/node0.conf:/etc/frr/frr.conf:ro
+    node1:
+      kind: linux
+      group: k8s-frr
+      network-mode: container:cilium-l3-worker
+      binds:
+        - rendered/node1.conf:/etc/frr/frr.conf:ro
   links:
+    - endpoints: ["nat:eth1", "spine1:eth3"]
+    - endpoints: ["nat:eth2", "spine2:eth3"]
     - endpoints: ["leaf1:eth1", "spine1:eth1"]
     - endpoints: ["leaf1:eth2", "spine2:eth1"]
     - endpoints: ["leaf2:eth1", "spine1:eth2"]
     - endpoints: ["leaf2:eth2", "spine2:eth2"]
     - endpoints: ["leaf1:eth3", "host1:eth1"]
-    - endpoints: ["leaf1:eth4", "host2:eth1"]
     - endpoints: ["leaf2:eth3", "host1:eth2"]
+    - endpoints: ["leaf1:eth4", "host2:eth1"]
     - endpoints: ["leaf2:eth4", "host2:eth2"]
+    - endpoints: ["leaf1:eth5", "node0:k8s-tor1"]
+    - endpoints: ["leaf2:eth5", "node0:k8s-tor2"]
+    - endpoints: ["leaf1:eth6", "node1:k8s-tor1"]
+    - endpoints: ["leaf2:eth6", "node1:k8s-tor2"]

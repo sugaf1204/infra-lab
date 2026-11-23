@@ -26,6 +26,16 @@ Containerlab と Docker は node3 上の検証専用 VM で動かす。Docker �
 
 [図のソース](network.dot)
 
+### Containerlab Desktop
+
+管理端末から `https://node3.canvm.jp:8090` に直接接続する。node3 の systemd ソケット `infra-lab-clab-desktop.socket` は `192.168.2.212:8090` で待ち受け、送信元 `192.168.2.210` の TCP 接続を fabric VM の `192.168.122.250:8090` へ転送する。fabric VM では `clab-api-server` v0.10.0 が HTTPS を提供し、VM のループバックと node3 の管理 IP `192.168.122.1` から API への接続を許可する。
+
+Desktop の Settings → Lab hosts → infra-lab-fabric で上記 URL とユーザー名 `clab-desktop` を指定する。初回は fabric VM で `sudo passwd clab-desktop` を実行してから Desktop でサインインする。API の設定ファイル `/etc/clab-api-server/clab-api-server.env` で `API_USER_GROUP=clab_api` と `SUPERUSER_GROUP=clab_admins` を指定する。専用アカウント `clab-desktop` は `clab_admins` に所属し、`ubuntu` が作成した既存ラボも一覧・操作できる。
+
+管理端末から `/health` が healthy を返すこと、許可対象外の送信元から node3 の待受に接続できないこと、API の導入・権限設定の前後で既存のラボコンテナ9台の ID が一致することを確認済み。権限設定後の Desktop でのラボ一覧は再サインイン待ち。
+
+切り戻す場合は、node3 で `sudo systemctl disable --now infra-lab-clab-desktop.socket` と `sudo systemctl stop infra-lab-clab-desktop.service` を実行し、fabric VM で `sudo systemctl disable --now clab-api-server` を実行する。API サービスの停止時に、専用の nftables テーブルも削除される。
+
 ## node3 の VM 管理
 
 `vm.sh` は Ubuntu のベースイメージを独立した qcow2 にコピーし、各 VM の管理 NIC を専用ホストの libvirt `default` に接続し、cloud-init に固定アドレスを渡す。既存 VM から移行するときは各ラボ VM で `sudo ./common/management.sh static enp1s0` を実行し、固定 IP で SSH できることを確認する。ラボ専用の `default` ネットワークは node3 で `sudo ./common/management.sh disable-dhcp` を実行する。配布元のチェックサムを確認した各バージョンの Ubuntu Server クラウドイメージと管理ユーザーの SSH 公開鍵を指定する。

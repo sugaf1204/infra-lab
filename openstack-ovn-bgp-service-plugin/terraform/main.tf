@@ -74,7 +74,7 @@ resource "openstack_networking_secgroup_rule_v2" "icmp" {
   direction         = "ingress"
   ethertype         = "IPv4"
   protocol          = "icmp"
-  remote_ip_prefix  = "203.0.113.10/32"
+  remote_ip_prefix  = "10.211.255.3/32"
 }
 
 resource "openstack_networking_port_v2" "guest" {

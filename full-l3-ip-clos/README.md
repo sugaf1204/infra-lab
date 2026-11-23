@@ -1,37 +1,36 @@
-# Full L3 IP Clos
+# Full L3 IP Clos（共有ファブリック + NAT）
 
-2 台の spine と 2 台の ToR を結ぶ IPv4 Clos。host1 と host2 は、それぞれ独立した `eth1` と `eth2` で leaf1 と leaf2 に接続する。各ホストは `lo` のノード IP を /32 で両 ToR に広告し、両 ToR から IPv4 デフォルト `0.0.0.0/0` のみを学習する。デフォルト経路の next hop は IPv6 リンクローカルで、`set src` により自ノードのループバック IP が送信元として選ばれる。全リンクが `remote-as external` を使ったインターフェース指定の eBGP Unnumbered であり、各ノードの FRR 設定には自ノードのループバック IP 以外の IP アドレスを記述しない。コンテナは管理ネットワークに接続せず、DHCP と静的経路を使わない。また全ノードで `net.ipv4.fib_multipath_hash_policy=1`（L4 ハッシュ）を有効化する。
+3 ラボ共通の 2-Spine / Dual-ToR IPv4 Clos ファブリックと外向き NAT ゲートウェイ。`infra-lab-switches` 上で 1 つの Containerlab トポロジー（`full-l3-ip-clos`）として稼働し、CLOS ホスト（`host1`/`host2`）・Kubernetes Kind ノード（`node0`/`node1`）・OpenStack chassis（`controller`/`compute`）を同じ Dual-ToR（`leaf1`/`leaf2`）に収容する。
 
-## 検証ネットワーク
+## 設計と NAT IP 非流出の仕組み
 
-![2 台の spine と 2 台の ToR、および ToR へ二重接続したホスト](network.svg)
+- **NAT 本体（`nat`, AS `65099`）**: 外向き `eth0` で `MASQUERADE` を行い、内側 `eth1`/`eth2` で `spine1`/`spine2` と接続する。Spine からラボ内の `/32` ホストルートのみを受信し、NAT からは一切の経路を広告しない（`DENY-ALL out`）。
+- **共有 Spine（`spine1`/`spine2`, AS `65001`/`65002`）**: NAT 向けのデフォルトルート（`ip route 0.0.0.0/0 <NAT_IP>`）を **Spine の静的ルートとしてのみ** 設定し、`redistribute static route-map DEFAULT-ONLY` で `0.0.0.0/0` のみを Leaf へ広告する。NAT の IP や NAT リンクの `/30` は BGP に載せない。
+- **共有 Dual-ToR（`leaf1`/`leaf2`, AS `65101`/`65102`）**: 全ホストに対して eBGP Unnumbered（`remote-as external`）で `0.0.0.0/0` のみを広告し、`/32` ホストルートのみを受信する。`leaf1`/`leaf2` および全ホストの BGP テーブル・FIB には NAT の IP は一切流出しない。
+- **各ホスト**: IPv6 リンクローカル next hop の IPv4 デフォルト（2-way ECMP）のみを学習し、ラボ内通信・外向き通信のいずれもこのデフォルト経路で行う。全ノードで `net.ipv4.fib_multipath_hash_policy=1`（L4 ハッシュ）を有効化する。
 
-[図のソース](network.dot)
+| `leaf1`/`leaf2` ポート | 接続先 | 用途 |
+| :--- | :--- | :--- |
+| `eth1` / `eth2` | `spine1` / `spine2` | Spine アップリンク |
+| `eth3` / `eth4` | `host1` / `host2` | CLOS 検証ホスト（`10.211.1.2/32`, `10.211.2.2/32`） |
+| `eth5` / `eth6` | `node0` / `node1` | Kubernetes Kind ノード相乗り FRR（`10.220.255.10/32`, `10.220.255.11/32`） |
+| `eth7` / `eth8` | `ovn-ctl-tor*` / `ovn-tor*` | OpenStack controller / compute chassis（`203.0.113.31/32`, `203.0.113.32/32`） |
 
-すべての実線は veth とその上の eBGP Unnumbered セッションを示す。各ホストの2本のリンクは独立した L3 インターフェースとして扱う。
+## 起動・検証・撤去
 
-spine は自身のループバック /32 を ToR に広告する。ToR がホストに広告するのはデフォルトのみなので、ホストから対向ホストおよび両 spine のループバックへの通信はすべてデフォルト経路の転送を検証できる。既存の spine を宛先に使い、追加ノードは不要。
-
-## 起動と検証
-
-[共通セットアップ](../common/README.md)後、このディレクトリで実行する。旧トポロジーを使っている場合は、旧チェックアウトでラボを停止してから切り替える。
+`infra-lab-switches` で管理 NIC に `192.168.122.1` への外向きルートを有効化した状態で実行する。
 
 ```bash
-ansible-playbook -i localhost, -c local ../common/render-fabric.yml -e "lab_dir=$PWD"
-sudo containerlab deploy -t topology.clab.yml
+sudo ./lab.sh up
 sudo ./verify.sh
 sudo ./verify.sh --failover
+sudo ./lab.sh down
 ```
 
-通常の検証では全8本の BGP セッション、両ホストの IPv4 デフォルト ECMP、両 ToR の直接学習経路、両 spine のホスト /32 への ECMP を確認する。また各ホストで対向ホストおよび両 spine 宛てのカーネル経路検索が BGP のデフォルトに一致することを確認してから、送信元指定なしの ping を送る。障害試験では ToR ごとにホスト側の2本を止め、経路が残る ToR へ収束した状態で ping を繰り返し、復旧後に ECMP と疎通を再確認する。
+## 実機検証結果（2026-11-24）
 
-```bash
-sudo docker exec clab-full-l3-ip-clos-host1 ip -4 route show default
-sudo docker exec clab-full-l3-ip-clos-host1 ip -4 route get fibmatch 10.211.255.3
-sudo docker exec clab-full-l3-ip-clos-spine1 vtysh -c 'show ip route 10.211.2.2/32'
-sudo containerlab destroy --cleanup -t topology.clab.yml
-```
+`infra-lab-switches`（4 vCPU / 6 GiB、Containerlab 0.83.0 / FRR 10.4.1）で共有ファブリックを展開し、全 3 ラボを同時収容した状態で以下を確認した。
 
-## 新規 fabric VM での検証
-
-Containerlab 0.83.0 と FRR 10.4.1 で6ノードを展開した。Ansible の再実行は `changed=0 failed=0`、`verify.sh --failover` は終了コード 0 だった。正常時・各 ToR の片系断・各復旧後を通じた30回の ping はすべて損失 0%。復旧後、両ホストの IPv4 main table は自ノードの loopback IP を送信元とする BGP デフォルトのみで、eth1 と eth2 の IPv6 リンクローカル next hop が等コストだった。試験中の `vtysh` 出力には `vtysh.conf` がない旨の警告が出た。
+- **NAT IP 非流出**: `leaf1` / `leaf2`・`host1` / `host2`・K8s `node0` / `node1`・OpenStack 両 chassis の BGP テーブルおよび FIB に `100.64.0.`（NAT IP / サブネット）が一切存在しないことを確認。
+- **外向き通信**: `host1` / `host2`、K8s `node0` / `node1`・両 Pod、OpenStack 両 chassis から BGP デフォルト（IPv6 LL 2-way ECMP）→ 共有 ToR → 共有 Spine → `nat` 経由で `1.1.1.1` への ping がすべて損失 0% で疎通することを確認。
+- **障害復旧**: `verify.sh --failover`（正常時・`leaf1` 片系断・復旧・`leaf2` 片系断・復旧）が終了コード 0 で通過。

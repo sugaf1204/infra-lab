@@ -1,4 +1,4 @@
-! データセンター向けプロファイル（BGP 設定やタイマーの最適化）
+! データセンター向けプロファイル
 frr defaults datacenter
 hostname {{ node.name }}
 !
@@ -6,29 +6,47 @@ interface lo
  ip address {{ node.address }}/32
 exit
 !
-! --- BGP 設定 ---
+interface eth3
+ ip address {{ node.nat_local }}
+exit
+!
+! NAT 向けのデフォルトルートは Spine の静的ルートとしてのみ設定（NAT IP は BGP で流さない）
+ip route 0.0.0.0/0 {{ node.nat_gw }}
+!
+ip prefix-list DEFAULT-ONLY permit 0.0.0.0/0
+ip prefix-list HOST-ROUTES permit 0.0.0.0/0 ge 32
+ip prefix-list HOST-AND-DEFAULT permit 0.0.0.0/0
+ip prefix-list HOST-AND-DEFAULT permit 0.0.0.0/0 ge 32
+ip prefix-list DENY-ALL deny 0.0.0.0/0 le 32
+!
+route-map DEFAULT-ONLY permit 10
+ match ip address prefix-list DEFAULT-ONLY
+!
 router bgp {{ node.asn }}
  bgp router-id {{ node.address }}
- ! IPv4 ユニキャストの自動有効化を無効化
  no bgp default ipv4-unicast
- ! 異なる AS からの経路でもパス長が同じであれば ECMP を許可
  bgp bestpath as-path multipath-relax
  !
- ! 対向 Leaf 向けピアグループ
  neighbor LEAVES peer-group
  neighbor LEAVES remote-as external
  neighbor LEAVES timers 3 9
- !
- ! Leaf への接続（eth1: leaf1, eth2: leaf2）- eBGP Unnumbered
  neighbor eth1 interface peer-group LEAVES
  neighbor eth2 interface peer-group LEAVES
  !
+ neighbor NAT peer-group
+ neighbor NAT remote-as external
+ neighbor NAT timers 3 9
+ neighbor eth3 interface peer-group NAT
+ !
  address-family ipv4 unicast
-  ! 自ノードのループバック IP を Fabric に広報（疎通確認・プローブ用）
   network {{ node.address }}/32
-  ! Leaf ピアを有効化（Leaf からホストの /32 ルートを受信）
+  redistribute static route-map DEFAULT-ONLY
   neighbor LEAVES activate
-  ! Leaf 2 台を経由したホスト宛て ECMP（最大 2 パス）
+  neighbor LEAVES prefix-list HOST-ROUTES in
+  neighbor LEAVES prefix-list HOST-AND-DEFAULT out
+  neighbor NAT activate
+  neighbor NAT prefix-list DENY-ALL in
+  neighbor NAT prefix-list HOST-ROUTES out
   maximum-paths 2
  exit-address-family
 !

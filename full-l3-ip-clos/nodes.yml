@@ -1,12 +1,22 @@
 fabric_nodes:
-  - name: host1
-    role: host
-    address: 10.211.1.2
-    asn: 65211
-  - name: host2
-    role: host
-    address: 10.211.2.2
-    asn: 65212
+  - name: nat
+    role: nat
+    address: 100.64.0.1
+    asn: 65099
+    spine1_ip: 100.64.0.1/30
+    spine2_ip: 100.64.0.5/30
+  - name: spine1
+    role: spine
+    address: 10.211.255.3
+    asn: 65001
+    nat_local: 100.64.0.2/30
+    nat_gw: 100.64.0.1
+  - name: spine2
+    role: spine
+    address: 10.211.255.4
+    asn: 65002
+    nat_local: 100.64.0.6/30
+    nat_gw: 100.64.0.5
   - name: leaf1
     role: leaf
     address: 10.211.255.1
@@ -15,11 +25,19 @@ fabric_nodes:
     role: leaf
     address: 10.211.255.2
     asn: 65102
-  - name: spine1
-    role: spine
-    address: 10.211.255.3
-    asn: 65001
-  - name: spine2
-    role: spine
-    address: 10.211.255.4
-    asn: 65002
+  - name: host1
+    role: host
+    address: 10.211.1.2
+    asn: 65211
+  - name: host2
+    role: host
+    address: 10.211.2.2
+    asn: 65212
+  - name: node0
+    role: node
+    address: 10.220.255.10
+    asn: 65202
+  - name: node1
+    role: node
+    address: 10.220.255.11
+    asn: 65204

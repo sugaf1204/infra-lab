@@ -1,4 +1,4 @@
-! データセンター向けプロファイル（BGP 設定やタイマーの最適化）
+! データセンター向けプロファイル
 frr defaults datacenter
 hostname {{ node.name }}
 !
@@ -6,49 +6,41 @@ interface lo
  ip address {{ node.address }}/32
 exit
 !
-! --- プレフィックスリスト（経路フィルタ） ---
-! ホストから受信する経路を /32（ホストルート）のみに限定
 ip prefix-list HOST-ROUTES permit 0.0.0.0/0 ge 32
-! ホストへ広報する経路をデフォルトルート（0.0.0.0/0）のみに限定
 ip prefix-list DEFAULT-ONLY permit 0.0.0.0/0
+ip prefix-list HOST-AND-DEFAULT permit 0.0.0.0/0
+ip prefix-list HOST-AND-DEFAULT permit 0.0.0.0/0 ge 32
 !
-! --- BGP 設定 ---
 router bgp {{ node.asn }}
  bgp router-id {{ node.address }}
- ! IPv4 ユニキャストの自動有効化を無効化
  no bgp default ipv4-unicast
- ! 異なる AS からの経路でもパス長が同じであれば ECMP を許可
  bgp bestpath as-path multipath-relax
  !
- ! 対向 Spine 向けピアグループ
  neighbor SPINES peer-group
  neighbor SPINES remote-as external
  neighbor SPINES timers 3 9
+ neighbor eth1 interface peer-group SPINES
+ neighbor eth2 interface peer-group SPINES
  !
- ! 対向 Host 向けピアグループ
+ ! 全ラボ共通のホスト向けピアグループ
+ ! eth3/eth4: CLOS hosts, eth5/eth6: K8s Kind nodes, eth7/eth8: OpenStack chassis
  neighbor HOSTS peer-group
  neighbor HOSTS remote-as external
  neighbor HOSTS timers 3 9
- !
- ! Spine への接続（eth1: spine1, eth2: spine2）- eBGP Unnumbered
- neighbor eth1 interface peer-group SPINES
- neighbor eth2 interface peer-group SPINES
- ! Host への接続（eth3: host1, eth4: host2）- eBGP Unnumbered
  neighbor eth3 interface peer-group HOSTS
  neighbor eth4 interface peer-group HOSTS
+ neighbor eth5 interface peer-group HOSTS
+ neighbor eth6 interface peer-group HOSTS
+ neighbor eth7 interface peer-group HOSTS
+ neighbor eth8 interface peer-group HOSTS
  !
  address-family ipv4 unicast
-  ! Spine ピアを有効化
   neighbor SPINES activate
-  ! Host ピアを有効化
+  neighbor SPINES prefix-list HOST-AND-DEFAULT in
+  neighbor SPINES prefix-list HOST-ROUTES out
   neighbor HOSTS activate
-  ! Host からは /32 ホストルートのみを受信
   neighbor HOSTS prefix-list HOST-ROUTES in
-  ! Host へはデフォルトルートのみを送信
   neighbor HOSTS prefix-list DEFAULT-ONLY out
-  ! Host に向けてデフォルトルートを生成・広報
-  neighbor HOSTS default-originate
-  ! Spine 2 台への ECMP（最大 2 パス）
   maximum-paths 2
  exit-address-family
 !

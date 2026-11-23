@@ -10,9 +10,9 @@ action=$1
 nic=$2
 container=$3
 port=$4
-if [[ ! $nic =~ ^(k8s|k8s-ctl|ovn|ovn-ctl)-tor[12]$ ||
-      ! $container =~ ^clab-(ovn-bgp-leaf|cilium-l3-tor)[12]$ ||
-      ! $port =~ ^eth[13]$ ]]; then
+if [[ ! $nic =~ ^(ovn|ovn-ctl)-tor[12]$ ||
+      ! $container =~ ^clab-full-l3-ip-clos-leaf[12]$ ||
+      ! $port =~ ^eth[78]$ ]]; then
   echo 'Expected a dedicated ToR data port.' >&2
   exit 2
 fi

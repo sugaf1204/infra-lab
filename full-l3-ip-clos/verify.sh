@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 lab_prefix=clab-full-l3-ip-clos
+external_probe=${EXTERNAL_PROBE:-1.1.1.1}
 
 node() {
   local name=$1
@@ -43,16 +44,30 @@ wait_for_nexthops() {
 check_peers() {
   node "$1" vtysh -c 'show bgp ipv4 unicast summary json' |
     jq --exit-status --argjson interfaces "$2" '
-      .peers | keys == $interfaces and all(.[]; .state == "Established" and .idType == "interface")
+      .peers as $p | all($interfaces[]; $p[.].state == "Established" and $p[.].idType == "interface")
     ' >/dev/null
+}
+
+check_no_nat_leak() {
+  local target
+  for target in leaf1 leaf2 host1 host2; do
+    if node "$target" vtysh -c 'show bgp ipv4 unicast' | grep -q '100\.64\.0\.'; then
+      printf 'NAT IP が %s の BGP テーブルへ流出しています。\n' "$target" >&2
+      return 1
+    fi
+    if fabric_ip "$target" show | grep -q '100\.64\.0\.'; then
+      printf 'NAT IP が %s の FIB へ流出しています。\n' "$target" >&2
+      return 1
+    fi
+  done
 }
 
 check_default_traffic() {
   local host=$1 target
-  for target in "$2" 10.211.255.3 10.211.255.4; do
+  for target in "$2" 10.211.255.3 10.211.255.4 "$external_probe"; do
     fabric_ip "$host" get fibmatch "$target" |
       jq -e 'any(.[]; (.dst == "default" or .dst == "0.0.0.0/0") and .protocol == "bgp")' >/dev/null
-    node "$host" ping -c 3 -W 2 "$target"
+    node "$host" ping -c 2 -W 2 "$target"
   done
 }
 
@@ -75,13 +90,15 @@ check_host_routes() {
 
 check_dual_tor() {
   local host router
+  check_peers nat '["eth1","eth2"]'
   for router in leaf1 leaf2; do
+    wait_for_nexthops "$router" 0.0.0.0/0 '["eth1","eth2"]'
     wait_for_nexthops "$router" 10.211.1.2/32 '["eth3"]'
     wait_for_nexthops "$router" 10.211.2.2/32 '["eth4"]'
     check_peers "$router" '["eth1","eth2","eth3","eth4"]'
   done
   for router in spine1 spine2; do
-    check_peers "$router" '["eth1","eth2"]'
+    check_peers "$router" '["eth1","eth2","eth3"]'
     wait_for_nexthops "$router" 10.211.1.2/32 '["eth1","eth2"]'
     wait_for_nexthops "$router" 10.211.2.2/32 '["eth1","eth2"]'
   done
@@ -89,6 +106,7 @@ check_dual_tor() {
   for host in host1 host2; do
     check_peers "$host" '["eth1","eth2"]'
   done
+  check_no_nat_leak
   check_traffic
 }
 

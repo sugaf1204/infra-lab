@@ -6,12 +6,13 @@ case "${1:-}:$#" in
   *) echo "Usage: $0 {advertised|reachable|failover|failover-routes} [controller|compute], withdrawn [VM_IP], or chassis" >&2; exit 2 ;;
 esac
 
-spine=clab-ovn-bgp-spine
-leaves=(clab-ovn-bgp-leaf1 clab-ovn-bgp-leaf2)
+spine=clab-full-l3-ip-clos-spine1
+leaves=(clab-full-l3-ip-clos-leaf1 clab-full-l3-ip-clos-leaf2)
 node_ips=(203.0.113.31 203.0.113.32)
 fixed_ips=(10.53.0.22 10.53.0.23)
-node_ports=(eth1 eth3)
-probe=203.0.113.10
+node_ports=(eth7 eth8)
+probe=10.211.255.3
+external_probe=${EXTERNAL_PROBE:-1.1.1.1}
 
 check_peers() {
   docker exec "$1" vtysh -c 'show bgp ipv4 unicast summary json' |
@@ -37,6 +38,9 @@ check_chassis() {
   check_fib "$bridges" ip -j -4 route show table 10 exact 0.0.0.0/0 || return 1
   ip -j -4 route get fibmatch "$probe" from "$node_ip" |
     jq -e '.[0].dst == "default" and .[0].protocol == "bgp"' >/dev/null || return 1
+  if vtysh -c 'show bgp ipv4 unicast' | grep -q '100\.64\.0\.'; then return 1; fi
+  if ip -4 route show table all | grep -q '100\.64\.0\.'; then return 1; fi
+  ping -I "$node_ip" -c 2 -W 2 "$external_probe" || return 1
   if [[ $check == withdrawn && $withdraw_ip == "$fixed_ip" ]]; then
     ip -j -4 route show table 42 exact "$fixed_ip/32" |
       jq -e 'length == 0' >/dev/null
@@ -138,7 +142,7 @@ if [[ $check != withdrawn ]]; then
     *) echo 'Expected controller or compute.' >&2; exit 2 ;;
   esac
 fi
-leaf_ports='["eth2"]'
+leaf_ports='["eth1","eth2"]'
 for index in "${chassis_indices[@]}"; do
   leaf_ports=$(jq --arg port "${node_ports[index]}" '. + [$port]' <<<"$leaf_ports")
 done

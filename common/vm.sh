@@ -8,7 +8,7 @@ fi
 
 action=${1:-}
 case "${2:-}" in
-  fabric) name=infra-lab-switches; ram=1536; cpus=2; disk_size=16G; address=192.168.122.250; mac=52:54:00:33:00:01 ;;
+  fabric) name=infra-lab-switches; ram=6144; cpus=4; disk_size=24G; address=192.168.122.250; mac=52:54:00:33:00:01 ;;
   k8s-control) name=infra-lab-k8s-control; ram=5120; cpus=6; disk_size=80G; address=192.168.122.219; mac=52:54:00:33:00:02 ;;
   k8s-worker) name=infra-lab-k8s-worker; ram=3072; cpus=2; disk_size=40G; address=192.168.122.7; mac=52:54:00:33:00:03 ;;
   openstack) name=infra-lab-openstack; ram=12288; cpus=8; disk_size=120G; address=192.168.122.119; mac=52:54:00:33:00:04 ;;
