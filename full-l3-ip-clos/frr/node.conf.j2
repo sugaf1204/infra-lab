@@ -56,14 +56,14 @@ router bgp {{ node.asn }}
  ! Cilium (127.0.0.2) からの接続をリッスン
  bgp listen range 127.0.0.2/32 peer-group CILIUM
  !
- ! --- ToR スイッチとの外部 BGP ピアリング ---
+ ! --- Leaf スイッチとの外部 BGP ピアリング ---
  bgp bestpath as-path multipath-relax
- neighbor TORS peer-group
- neighbor TORS remote-as external
- neighbor TORS timers 3 9
- ! ToR1（k8s-tor1）および ToR2（k8s-tor2）との eBGP Unnumbered
- neighbor k8s-tor1 interface peer-group TORS
- neighbor k8s-tor2 interface peer-group TORS
+ neighbor LEAVES peer-group
+ neighbor LEAVES remote-as external
+ neighbor LEAVES timers 3 9
+ ! Leaf1（k8s-leaf1）および Leaf2（k8s-leaf2）との eBGP Unnumbered
+ neighbor k8s-leaf1 interface peer-group LEAVES
+ neighbor k8s-leaf2 interface peer-group LEAVES
  !
  address-family ipv4 unicast
   ! 自ノードの Loopback IP（connected）を BGP に再配布
@@ -78,13 +78,13 @@ router bgp {{ node.asn }}
   ! Cilium へは経路を広告しない（不要なループやルーティング混乱を防止）
   neighbor CILIUM prefix-list DENY-ALL out
   !
-  ! ToR ピアを有効化
-  neighbor TORS activate
-  ! ToR からはデフォルトルートのみ受信
-  neighbor TORS prefix-list DEFAULT-ONLY in
-  ! ToR へは Node IP、Pod IP、VIP の /32 のみを広報
-  neighbor TORS prefix-list HOST-ROUTES out
-  ! ToR 2 台への ECMP（最大 2 パス）
+  ! Leaf ピアを有効化
+  neighbor LEAVES activate
+  ! Leaf からはデフォルトルートのみ受信
+  neighbor LEAVES prefix-list DEFAULT-ONLY in
+  ! Leaf へは Node IP、Pod IP、VIP の /32 のみを広報
+  neighbor LEAVES prefix-list HOST-ROUTES out
+  ! Leaf 2 台への ECMP（最大 2 パス）
   maximum-paths 2
  exit-address-family
 !

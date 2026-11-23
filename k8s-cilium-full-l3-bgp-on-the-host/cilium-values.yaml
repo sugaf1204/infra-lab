@@ -16,7 +16,7 @@ bgpControlPlane:
 kubeProxyReplacement: true
 socketLB:
   enabled: false
-devices: "k8s-tor+,lo"
+devices: "k8s-leaf+,lo"
 nodePort:
   directRoutingDevice: "lo"
 rollOutCiliumPods: true

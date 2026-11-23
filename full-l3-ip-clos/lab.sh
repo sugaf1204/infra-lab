@@ -4,8 +4,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 ovn_nics() {
   for i in 1 2; do
-    ../common/tor-nic.sh "$1" "ovn-ctl-tor$i" "clab-full-l3-ip-clos-leaf$i" eth7 || true
-    ../common/tor-nic.sh "$1" "ovn-tor$i" "clab-full-l3-ip-clos-leaf$i" eth8 || true
+    ../common/tor-nic.sh "$1" "ovn-ctl-tor$i" "clab-full-l3-ip-clos-leaf$i" eth5 || true
+    ../common/tor-nic.sh "$1" "ovn-tor$i" "clab-full-l3-ip-clos-leaf$i" eth6 || true
   done
 }
 

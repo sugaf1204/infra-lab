@@ -10,7 +10,7 @@ spine=clab-full-l3-ip-clos-spine1
 leaves=(clab-full-l3-ip-clos-leaf1 clab-full-l3-ip-clos-leaf2)
 node_ips=(203.0.113.31 203.0.113.32)
 fixed_ips=(10.53.0.22 10.53.0.23)
-node_ports=(eth7 eth8)
+node_ports=(eth5 eth6)
 probe=10.211.255.3
 external_probe=${EXTERNAL_PROBE:-1.1.1.1}
 

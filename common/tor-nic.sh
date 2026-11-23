@@ -12,8 +12,8 @@ container=$3
 port=$4
 if [[ ! $nic =~ ^(ovn|ovn-ctl)-tor[12]$ ||
       ! $container =~ ^clab-full-l3-ip-clos-leaf[12]$ ||
-      ! $port =~ ^eth[78]$ ]]; then
-  echo 'Expected a dedicated ToR data port.' >&2
+      ! $port =~ ^eth[56]$ ]]; then
+  echo 'Expected a dedicated Leaf data port.' >&2
   exit 2
 fi
 

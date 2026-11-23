@@ -16,7 +16,7 @@ Ubuntu 26.04 の controller（`infra-lab-openstack`）と追加 compute（`infra
   - 両 chassis の `sudo ./verify.sh chassis`（table 10 の IPv6 リンクローカル 2-way ECMP デフォルトと table 42 のローカル OVN `/32` 経路）、fabric VM の `sudo ./verify.sh advertised`、`sudo ./verify.sh reachable`（両 chassis と両テナント VM への spine からの ping 全損失 0%）、`sudo ./verify.sh failover`（`leaf1`・`leaf2` の片系断と復旧を通じた経路収束・疎通）がすべて終了コード 0 で通過した。
   - `terraform destroy -target='openstack_compute_instance_v2.guest["compute"]'` 後に fabric VM で `sudo ./verify.sh withdrawn 10.53.0.23` を確認し、再 `apply` 後に `sudo ./verify.sh advertised` での再広告も確認した。
 - **共有ファブリック（`full-l3-ip-clos`）統合後の検証（2026-11-24）**:
-  - 共有 Dual-ToR（`leaf1`/`leaf2` の `eth7`/`eth8`）＋共有 Spine（`spine1`: `10.211.255.3`）＋ NAT へ統合した状態で、両 chassis の `verify.sh chassis`（IPv6 リンクローカル 2-way ECMP デフォルト・NAT IP 非流出・`1.1.1.1` 外向き ping 損失 0%）および fabric 側の `verify.sh advertised` / `reachable` / `failover` がすべて終了コード 0 で通過した。
+  - 共有 2-Spine / 2-Leaf（`leaf1`/`leaf2` の `eth5`/`eth6`）＋ NAT へ統合した状態で、両 chassis の `verify.sh chassis`（IPv6 リンクローカル 2-way ECMP デフォルト・NAT IP 非流出・`1.1.1.1` 外向き ping 損失 0%）および fabric 側の `verify.sh advertised` / `reachable` / `failover` がすべて終了コード 0 で通過した。
 
 ## 検証ネットワーク
 

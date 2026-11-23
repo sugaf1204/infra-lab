@@ -22,6 +22,11 @@ ip prefix-list DENY-ALL deny 0.0.0.0/0 le 32
 route-map DEFAULT-ONLY permit 10
  match ip address prefix-list DEFAULT-ONLY
 !
+route-map SET-SRC permit 10
+ set src {{ node.address }}
+!
+ip protocol bgp route-map SET-SRC
+!
 router bgp {{ node.asn }}
  bgp router-id {{ node.address }}
  no bgp default ipv4-unicast
