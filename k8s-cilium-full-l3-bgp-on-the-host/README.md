@@ -11,9 +11,9 @@ Ubuntu 24.04.5 の control plane（`infra-lab-k8s-control`）と worker（`infra
   - Ubuntu 24.04 標準の FRR 8.4.4 では Cilium が作成する `proto kernel` の Pod `/32` ルートが zebra に取り込まれなかったため、`install-tools.sh` で FRRouting 公式リポジトリ（`frr-10`、検証時は `10.7.1`）を導入する構成とした。これにより不要な `/32` の漏洩なく Node IP・Pod `/32`・VIP `/32` のみが BGP 広告されることを確認した。
   - BGP Unnumbered 環境では `k8s-tor1` / `k8s-tor2` に IPv4 アドレスが付かないため、Cilium の `kubeProxyReplacement: true` で BPF を正しくアタッチするには `cilium-values.yaml` に `devices: "k8s-tor+,lo"` と `nodePort.directRoutingDevice: "lo"` の明示が必要だった。
 - **疎通・障害復旧**:
-  - control plane の `sudo ./lab.sh verify`（`kube-proxy` DaemonSet 不在、ノード間・外部クライアント疎通、両 Pod → 外部クライアント疎通、Pod 間双方向疎通）が終了コード 0 で通過した。
-  - worker の `sudo ./lab.sh verify-node`（ローカル BGP 3セッション Established、デフォルト ECMP、VRF/ブリッジ不在、疎通）が終了コード 0 で通過した。
-  - fabric VM の `sudo ./lab.sh verify-fabric --failover`（両 ToR での VIP `10.220.250.10/32` 2-way ECMP、正常時・`tor1` 片系断・復旧・`tor2` 片系断・復旧での両ノード ping と `http://10.220.250.10/` の `probe` 応答）が終了コード 0 で通過した。
+  - control plane の `sudo ./verify.sh cluster`（`kube-proxy` DaemonSet 不在、ノード間・外部クライアント疎通、両 Pod → 外部クライアント疎通、Pod 間双方向疎通）が終了コード 0 で通過した。
+  - worker の `sudo ./verify.sh node`（ローカル BGP 3セッション Established、デフォルト ECMP、VRF/ブリッジ不在、疎通）が終了コード 0 で通過した。
+  - fabric VM の `sudo ./verify.sh fabric --failover`（両 ToR での VIP `10.220.250.10/32` 2-way ECMP、正常時・`tor1` 片系断・復旧・`tor2` 片系断・復旧での両ノード ping と `http://10.220.250.10/` の `probe` 応答）が終了コード 0 で通過した。
 
 ## 検証ネットワーク
 
@@ -49,7 +49,7 @@ ssh -J node3 ubuntu@192.168.122.219   'cd ~/infra-lab/k8s-cilium-full-l3-bgp-on-
 ssh -J node3 ubuntu@192.168.122.7   'cd ~/infra-lab/k8s-cilium-full-l3-bgp-on-the-host && sudo -n ./lab.sh join'
 ```
 
-control plane で `sudo ./lab.sh verify` を実行し、`kube-proxy` 不在・Pod 間の双方向疎通・両 Pod から外部クライアントへデフォルト経路を使った通信を確認する。worker の `sudo ./lab.sh verify-node` は、ローカルの BGP セッション、FIB、VRF/ブリッジ不在を確認する。fabric の `sudo ./lab.sh verify-fabric --failover` は各 ToR を片方ずつ停止して、ToR 上の Service VIP 向け 2-way ECMP とクライアントから両ノード・Service VIP への疎通を確認する。
+control plane で `sudo ./verify.sh cluster` を実行し、`kube-proxy` 不在・Pod 間の双方向疎通・両 Pod から外部クライアントへデフォルト経路を使った通信を確認する。worker の `sudo ./verify.sh node` は、ローカルの BGP セッション、FIB、VRF/ブリッジ不在を確認する。fabric の `sudo ./verify.sh fabric --failover` は各 ToR を片方ずつ停止して、ToR 上の Service VIP 向け 2-way ECMP とクライアントから両ノード・Service VIP への疎通を確認する。
 
 ## 撤去
 

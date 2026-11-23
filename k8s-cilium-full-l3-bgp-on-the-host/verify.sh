@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
-# Loaded by lab.sh after it selects the node role and holds the lab lock.
+set -euo pipefail
+
+export KUBECONFIG=/etc/kubernetes/admin.conf
+control_node=cilium-l3-node
+control_ip=10.220.255.10
+worker_node=cilium-l3-worker
+worker_ip=10.220.255.11
+vip=10.220.250.10
+client_ip=10.220.240.14
+tors=(clab-cilium-l3-tor1 clab-cilium-l3-tor2)
+client=clab-cilium-l3-client
+failover=${2:-}
+case "$(hostname -s)" in
+  infra-lab-k8s-control) role=control-plane; node_ip=$control_ip ;;
+  infra-lab-k8s-worker) role=worker; node_ip=$worker_ip ;;
+  *) role=fabric ;;
+esac
 
 check_peers() {
   docker exec "$1" vtysh -c 'show bgp ipv4 unicast summary json' |
@@ -130,3 +146,10 @@ verify() {
   kubectl -n lab-probe exec "$control_pod" -- ping -c 2 -W 2 "$worker_pod_ip"
   kubectl -n lab-probe exec "$worker_pod" -- ping -c 2 -W 2 "$control_pod_ip"
 }
+
+case "${1:-}" in
+  cluster) verify ;;
+  node) verify_node ;;
+  fabric) verify_fabric ;;
+  *) echo "Usage: $0 {cluster|node|fabric [--failover]}" >&2; exit 2 ;;
+esac
