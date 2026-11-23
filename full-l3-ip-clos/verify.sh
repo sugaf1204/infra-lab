@@ -8,20 +8,21 @@ node() {
   docker exec "$lab_prefix-$name" "$@"
 }
 
-fabric_route() {
-  local router=$1 prefix=$2 pid family=-4
-  if [[ $prefix == *:* ]]; then family=-6; fi
+fabric_ip() {
+  local router=$1 pid
+  shift
   pid=$(docker inspect --format '{{.State.Pid}}' "$lab_prefix-$router")
   [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
-  nsenter --target "$pid" --net ip -j "$family" route show exact "$prefix"
+  nsenter --target "$pid" --net ip -j -4 route "$@"
 }
 
 expect_nexthops() {
   local router=$1 route=$2 interfaces=$3
-  fabric_route "$router" "$route" |
+  fabric_ip "$router" show exact "$route" |
     jq --exit-status --argjson interfaces "$interfaces" '
       [.[] | select(.protocol == "bgp") |
-        (.nexthops // [.])[] | select((.gateway // .via.host // "") | startswith("fe80:")) | .dev
+        (.nexthops // [.])[] |
+        select(.via.family == "inet6" and (.via.host | startswith("fe80:"))) | .dev
       ] | sort == ($interfaces | sort)
     ' >/dev/null
 }
@@ -35,7 +36,7 @@ wait_for_nexthops() {
     sleep 2
   done
   printf '経路の収束を確認できませんでした (%s %s)。\n' "$1" "$2" >&2
-  fabric_route "$1" "$2"
+  fabric_ip "$1" show exact "$2"
   return 1
 }
 
@@ -46,9 +47,20 @@ check_peers() {
     ' >/dev/null
 }
 
+check_default_traffic() {
+  local host=$1 source=$2 target
+  for target in 10.211.255.3 10.211.255.4; do
+    fabric_ip "$host" get fibmatch "$target" from "$source" |
+      jq -e 'any(.[]; (.dst == "default" or .dst == "0.0.0.0/0") and .protocol == "bgp")' >/dev/null
+    node "$host" ping -I "$source" -c 3 -W 2 "$target"
+  done
+}
+
 check_traffic() {
-  node host1 ping -c 3 -W 2 10.211.2.2
-  node host2 ping -c 3 -W 2 10.211.1.2
+  node host1 ping -I 10.211.1.2 -c 3 -W 2 10.211.2.2
+  node host2 ping -I 10.211.2.2 -c 3 -W 2 10.211.1.2
+  check_default_traffic host1 10.211.1.2
+  check_default_traffic host2 10.211.2.2
 }
 
 case "${1:-}" in
@@ -59,8 +71,7 @@ esac
 check_host_routes() {
   local interfaces=$1 host
   for host in host1 host2; do
-    wait_for_nexthops "$host" ::/0 "$interfaces"
-    fabric_route "$host" 0.0.0.0/0 | jq -e 'length == 0' >/dev/null
+    wait_for_nexthops "$host" 0.0.0.0/0 "$interfaces"
   done
   wait_for_nexthops host1 10.211.2.2/32 "$interfaces"
   wait_for_nexthops host2 10.211.1.2/32 "$interfaces"

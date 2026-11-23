@@ -1,6 +1,6 @@
 # Full L3 IP Clos
 
-2 台の spine と 2 台の ToR を結ぶ IPv4 Clos。host1 と host2 は、それぞれ独立した `eth1` と `eth2` で leaf1 と leaf2 に接続する。各ホストは `lo` のノード IP を /32 で両 ToR に広告し、両 ToR から IPv6 link-local next hop 付きの IPv6 デフォルトと、対向ホストの IPv4 /32 を学習する。全リンクがインターフェース指定の eBGP Unnumbered を使う。
+2 台の spine と 2 台の ToR を結ぶ IPv4 Clos。host1 と host2 は、それぞれ独立した `eth1` と `eth2` で leaf1 と leaf2 に接続する。各ホストは `lo` のノード IP を /32 で両 ToR に広告し、両 ToR から IPv4 デフォルト `0.0.0.0/0` と対向ホストの IPv4 /32 を学習する。どちらの経路も next hop は IPv6 リンクローカルで、全リンクがインターフェース指定の eBGP Unnumbered を使う。コンテナは管理ネットワークに接続せず、DHCP と静的経路を使わない。
 
 ## 検証ネットワーク
 
@@ -9,6 +9,8 @@
 [図のソース](network.dot)
 
 すべての実線は veth とその上の eBGP Unnumbered セッションを示す。各ホストの2本のリンクは独立した L3 インターフェースとして扱う。
+
+spine は自身のループバック /32 を ToR に広告する。ToR がホストに広告するのは対向ホストの /32 とデフォルトのみなので、ホストから spine のループバックへの通信でデフォルト経路の転送を検証できる。既存の spine を宛先に使い、追加ノードは不要。
 
 ## 起動と検証
 
@@ -20,10 +22,11 @@ sudo ./verify.sh
 sudo ./verify.sh --failover
 ```
 
-通常の検証では全8本の BGP セッション、両ホストの IPv6 デフォルトと IPv4 /32 の ECMP、両 ToR の直接学習経路、両 spine のノード /32 への ECMP、ホスト間の双方向 ping を確認する。障害試験では ToR ごとにホスト側の2本を止め、両ホストの IPv6 デフォルトと IPv4 /32、および spine のノード /32 が残る ToR に収束することを確認する。両方の片系断で双方向 ping を行い、各試験後に ECMP へ戻ることを確認する。
+通常の検証では全8本の BGP セッション、両ホストの IPv4 デフォルトと対向ホスト /32 の ECMP、両 ToR の直接学習経路、両 spine のホスト /32 への ECMP、ホスト間の双方向 ping を確認する。また各ホストで両 spine 宛てのカーネル経路検索が BGP のデフォルトに一致することを確認してから、実際に ping を送る。障害試験では ToR ごとにホスト側の2本を止め、経路が残る ToR へ収束した状態で ping を繰り返し、復旧後に ECMP と疎通を再確認する。
 
 ```bash
-sudo docker exec clab-full-l3-ip-clos-host1 ip -6 route show default
+sudo docker exec clab-full-l3-ip-clos-host1 ip -4 route show default
+sudo docker exec clab-full-l3-ip-clos-host1 ip -4 route get fibmatch 10.211.255.3 from 10.211.1.2
 sudo docker exec clab-full-l3-ip-clos-spine1 vtysh -c 'show ip route 10.211.2.2/32'
 sudo containerlab destroy --cleanup -t topology.clab.yml
 ```

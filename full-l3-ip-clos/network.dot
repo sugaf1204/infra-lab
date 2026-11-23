@@ -5,12 +5,12 @@ graph clos {
 
   spine1 [label=<
     <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-      <TR><TD COLSPAN="2"><B>spine1</B><BR/>FRR · AS65001</TD></TR>
+      <TR><TD COLSPAN="2"><B>spine1</B><BR/>FRR · AS65001<BR/>lo 10.211.255.3/32</TD></TR>
       <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
     </TABLE>>];
   spine2 [label=<
     <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-      <TR><TD COLSPAN="2"><B>spine2</B><BR/>FRR · AS65002</TD></TR>
+      <TR><TD COLSPAN="2"><B>spine2</B><BR/>FRR · AS65002<BR/>lo 10.211.255.4/32</TD></TR>
       <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
     </TABLE>>];
   leaf1 [label=<
