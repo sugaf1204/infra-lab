@@ -1,6 +1,6 @@
 name: cilium-l3
 mgmt:
-  network: clab-cilium-l3-worker
+  network: clab-cilium-l3-node
   skip-when-unused: true
 topology:
   nodes:
@@ -10,4 +10,4 @@ topology:
       network-mode: host
       binds:
         - ../common/frr/daemons:/etc/frr/daemons:ro
-        - frr/worker.conf:/etc/frr/frr.conf:ro
+        - .lab-state/kubeadm/frr.conf:/etc/frr/frr.conf:ro

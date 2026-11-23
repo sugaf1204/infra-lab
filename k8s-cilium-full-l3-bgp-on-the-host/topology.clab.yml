@@ -32,19 +32,6 @@ topology:
         - frr/client.conf:/etc/frr/frr.conf:ro
       exec:
         - ip -4 addr replace 10.220.240.14/32 dev lo
-    host-frr:
-      kind: linux
-      image: quay.io/frrouting/frr:10.4.1
-      network-mode: host
-      binds:
-        - ../common/frr/daemons:/etc/frr/daemons:ro
-        - frr/host.conf:/etc/frr/frr.conf:ro
   links:
-    - type: host
-      endpoint: {node: tor1, interface: eth1}
-      host-interface: cilium-tor1
-    - type: host
-      endpoint: {node: tor2, interface: eth1}
-      host-interface: cilium-tor2
     - endpoints: ["tor1:eth2", "client:eth1"]
     - endpoints: ["tor2:eth2", "client:eth2"]

@@ -14,32 +14,32 @@ digraph cilium {
     tor2 [label="ToR2 container · AS65102"];
     {rank=same; tor1; tor2}
 
-    subgraph cluster_control {
-      label="Kubernetes control plane"; labelloc=b;
-      style=rounded; color="#94a3b8"; margin=12;
-      control [label="Host FRR · AS65202\nlo 10.220.255.10/32\nVRF cilium-egress"];
-      cp_cilium [label="Cilium · AS65201\nCNI + LoadBalancer VIP"];
-      cp_pod [label="Probe Pod · eth0", fillcolor="#f0fdf4"];
-      control -> cp_cilium [dir=back, style=dashed, color="#2563a5", label="numbered eBGP\n127.0.0.2 → 127.0.0.1"];
-      cp_cilium -> cp_pod [dir=none, label="lxc… ↔ eth0 · veth"];
-    }
-
     client -> tor1 [dir=none, label="eth1 ↔ eth2"];
     client -> tor2 [dir=none, label="eth2 ↔ eth2"];
-    tor1 -> control [dir=none, label="eth1 ↔ cilium-tor1"];
-    tor2 -> control [dir=none, label="eth1 ↔ cilium-tor2"];
+  }
+
+  subgraph cluster_control {
+    label="Kubernetes control plane VM"; labelloc=b;
+    style=rounded; color="#94a3b8"; margin=12;
+    control [label="Host FRR · AS65202\nlo 10.220.255.10/32"];
+    cp_cilium [label="Cilium · AS65201\nCNI + LoadBalancer VIP"];
+    cp_pod [label="Probe Pod · eth0", fillcolor="#f0fdf4"];
+    control -> cp_cilium [dir=back, style=dashed, color="#2563a5", label="numbered eBGP\n127.0.0.2 → 127.0.0.1"];
+    cp_cilium -> cp_pod [dir=none, label="lxc… ↔ eth0 · veth"];
   }
 
   subgraph cluster_worker {
     label="Kubernetes worker VM"; labelloc=b;
     style=rounded; color="#94a3b8"; margin=16;
-    worker [label="Host FRR · AS65204\nlo 10.220.255.11/32\nVRF cilium-egress"];
+    worker [label="Host FRR · AS65204\nlo 10.220.255.11/32"];
     wk_cilium [label="Cilium · AS65201\nCNI + LoadBalancer VIP"];
     wk_pod [label="Probe Pod · eth0", fillcolor="#f0fdf4"];
     worker -> wk_cilium [dir=back, style=dashed, color="#2563a5", label="numbered eBGP\n127.0.0.2 → 127.0.0.1"];
     wk_cilium -> wk_pod [dir=none, label="lxc… ↔ eth0 · veth"];
   }
 
+  tor1 -> control [dir=none, label="eth1 ↔ k8s-tor1\nDedicated L2"];
+  tor2 -> control [dir=none, label="eth1 ↔ k8s-tor2\nDedicated L2"];
   tor1 -> worker [dir=none, label="eth3 ↔ k8s-tor1\nDedicated L2"];
   tor2 -> worker [dir=none, label="eth3 ↔ k8s-tor2\nDedicated L2"];
 }
