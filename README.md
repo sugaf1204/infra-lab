@@ -19,7 +19,7 @@ Kubernetes の操作は control plane で `sudo kubectl --kubeconfig /etc/kubern
 
 ## 検証の方針
 
-- 検証する機構と、合否を判定する観測点を先に決める。検証用ホストは BGP で IPv4 デフォルト `0.0.0.0/0` を学び、FIB で IPv6 リンクローカル next hop を確認する。宛先別経路のない IPv4 アドレスまで、デフォルトを選んでパケットが通ることも確認する。ラボの管理ネットワークとゲストのサブネットは DHCP を無効にする。Kubernetes はメイン経路表を使い、OpenStack は標準プラグインに必要な VRF を使う。FRR のフィルターは許可する範囲を指定し、Service VIP 個別の値は Cilium の設定に置く。
+- 検証する機構と、合否を判定する観測点を先に決める。検証用ホストは BGP で IPv4 デフォルト `0.0.0.0/0` を学び、FIB で IPv6 リンクローカル next hop を確認する。宛先別経路のない IPv4 アドレスまで、デフォルトを選んでパケットが通ることも確認する。ラボの管理ネットワークは DHCP を無効にする。OpenStack のテナントサブネットは OVN BGP プラグインの要件に従って DHCP を有効にする。Kubernetes はメイン経路表を使い、OpenStack は標準プラグインに必要な VRF を使う。FRR のフィルターは許可する範囲を指定し、Service VIP 個別の値は Cilium の設定に置く。
 - BGP の検証では広告と FIB を照合し、疎通試験では経路の撤回と復旧に応じて同じ通信の結果が変わることを確認する。
 - 条件を満たせない場合は、使った設定と観測結果を記録する。その状態から追加設定を検証する場合は、新しい検証条件として明示する。
 
@@ -39,4 +39,4 @@ done
 
 ## 作業レポート
 
-fabric、Kubernetes control plane、Kubernetes worker、OpenStack controller、OpenStack compute の配置は [共通の物理構成図](common/README.md#接続方法) を参照。OpenStack の追加 compute の Nova 登録と DHCP 無効時のテナント VM 間転送は未確認。ラボごとの検証手順と制約を各 README に記録する。
+fabric、Kubernetes control plane、Kubernetes worker、OpenStack controller、OpenStack compute の配置は [共通の物理構成図](common/README.md#接続方法) を参照。OpenStack の追加 compute の Nova 登録とテナント VM 間転送は未確認。ラボごとの検証手順と制約を各 README に記録する。

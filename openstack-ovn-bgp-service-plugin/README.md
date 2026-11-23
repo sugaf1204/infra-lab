@@ -82,7 +82,7 @@ fabric VM の `deploy` は ToR と spine を起動し、専用 virtio NIC を To
 
 ## VM 固定 IP の検証
 
-controller で管理者が `demo` 所有のネットワークと、検証 VM の配置先を指定する Nova availability zone を作る。cloud-init 対応イメージ `ubuntu-cloud` を Glance に用意する。テナント権限で DHCP 無効のサブネット、ポート、VM を作る。コンフィグドライブから固定 IP を設定する。管理者が provider 属性を指定することで、ML2 の flat ドライバーを使う。既存環境を移行する場合は、同名のネットワーク・flavor・セキュリティグループと controller 側の既存 VM を再利用し、追加 compute 側の VM を作る。 [ML2 flat ドライバーの実装](https://github.com/openstack/neutron/blob/b82b437de7/neutron/plugins/ml2/drivers/type_flat.py#L112-L114)
+controller で管理者が `demo` 所有のネットワークと、検証 VM の配置先を指定する Nova availability zone を作る。cloud-init 対応イメージ `ubuntu-cloud` を Glance に用意する。テナント権限で DHCP 有効のサブネット、ポート、VM を作る。管理者が provider 属性を指定することで、ML2 の flat ドライバーを使う。既存環境を移行する場合は、同名のネットワーク・flavor・セキュリティグループと controller 側の既存 VM を再利用し、追加 compute 側の VM を作る。 [ML2 flat ドライバーの実装](https://github.com/openstack/neutron/blob/b82b437de7/neutron/plugins/ml2/drivers/type_flat.py#L112-L114)
 
 ```bash
 source "$HOME/devstack-ovn-bgp/openrc" admin admin
@@ -96,7 +96,7 @@ openstack network create --project demo --internal --no-share \
 
 source "$HOME/devstack-ovn-bgp/openrc" demo demo
 openstack subnet create --network ovn-bgp-direct \
-  --subnet-range 10.53.0.0/24 --no-dhcp --gateway none ovn-bgp-direct-v4
+  --subnet-range 10.53.0.0/24 --gateway 10.53.0.1 ovn-bgp-direct-v4
 openstack security group create ovn-bgp-icmp
 openstack security group rule create --ingress --protocol icmp \
   --remote-ip 203.0.113.10/32 ovn-bgp-icmp
@@ -104,13 +104,13 @@ openstack security group rule create --ingress --protocol icmp \
 openstack port create --network ovn-bgp-direct \
   --fixed-ip subnet=ovn-bgp-direct-v4,ip-address=10.53.0.22 \
   --security-group ovn-bgp-icmp ovn-bgp-vm-port
-openstack server create --wait --image ubuntu-cloud --config-drive true \
+openstack server create --wait --image ubuntu-cloud \
   --flavor ovn-bgp-ubuntu --port ovn-bgp-vm-port \
   --availability-zone ovn-bgp-controller ovn-bgp-vm
 openstack port create --network ovn-bgp-direct \
   --fixed-ip subnet=ovn-bgp-direct-v4,ip-address=10.53.0.23 \
   --security-group ovn-bgp-icmp ovn-bgp-compute-vm-port
-openstack server create --wait --image ubuntu-cloud --config-drive true \
+openstack server create --wait --image ubuntu-cloud \
   --flavor ovn-bgp-ubuntu --port ovn-bgp-compute-vm-port \
   --availability-zone ovn-bgp-compute ovn-bgp-compute-vm
 ```
@@ -132,9 +132,9 @@ sudo ./verify.sh chassis
 
 `advertised` は、テナント VM の `10.53.0.22/32` と `10.53.0.23/32` がそれぞれの chassis につながるインターフェース経由で両 ToR に入ることと、spine の ECMP を確認する。追加 compute では `chassis` がローカルの OVN 経路と両 ToR から学習したデフォルトを照合する。`failover` は ToR 側の chassis との接続を片系ずつ停止し、経路の収束と両 VM の固定 IP への ping を確認する。`advertised`、`reachable`、`failover`、`failover-routes` は `controller` または `compute` を引数に指定して片方だけを検証できる。`failover-routes` は収束と経路を確認する。
 
-## DHCP 無効での制約
+## flat provider network と DHCP
 
-Neutron の固定版は、flat network の `bgp-lr-main` のインターフェース用アドレスを OVN の `DHCP_Options` から取得する。サブネットの DHCP を無効にすると ML2/OVN はこの行を作らない。VM の /32 が広告された場合も、DHCP 無効での OVN 内部の転送は別に検証する必要がある。 [BGP プラグイン](https://github.com/openstack/neutron/blob/b82b437de7/neutron/services/bgp/commands.py#L85-L100) · [OVN DHCP の実装](https://github.com/openstack/neutron/blob/b82b437de7/neutron/plugins/ml2/drivers/ovn/mech_driver/ovsdb/ovn_client.py#L2983-L3013)
+Neutron の `ovn-bgp` プラグインは、flat network の論理スイッチと論理ルーター `bgp-lr-main` を接続するポートのアドレス情報を OVN の `DHCP_Options` テーブルから取得する。サブネットの DHCP を有効にしてゲートウェイ（`10.53.0.1`）を設定することで、OVN は必要な DHCP オプションと論理ルーターポートを生成し、テナント VM 間の転送および spine からの到達性を確保する。ゲスト VM は OVN の分散 DHCP レスポンダーから自動的に IP とデフォルトルートを取得する。 [BGP プラグイン](https://github.com/openstack/neutron/blob/b82b437de7/neutron/services/bgp/commands.py#L85-L100) · [OVN DHCP の実装](https://github.com/openstack/neutron/blob/b82b437de7/neutron/plugins/ml2/drivers/ovn/mech_driver/ovsdb/ovn_client.py#L2983-L3013)
 
 ## 過去の確認結果
 
