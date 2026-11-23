@@ -11,7 +11,7 @@ kubeadm の control plane と worker を別々の VM で動かす。両ノード
 | 接続 | インターフェース |
 | --- | --- |
 | control plane → ToR1 / ToR2 | `cilium-tor1` ↔ `tor1:eth1`、`cilium-tor2` ↔ `tor2:eth1` |
-| worker → ToR1 / ToR2 | `k8s-tor1` ↔ `tor1:eth3`、`k8s-tor2` ↔ `tor2:eth3`。各リンクに専用の L2 区間を使い、fabric VM の NIC に ToR を MACVLAN で接続する |
+| worker → ToR1 / ToR2 | `k8s-tor1` ↔ `tor1:eth3`、`k8s-tor2` ↔ `tor2:eth3`。各リンクに専用の L2 区間を使い、fabric VM の virtio NIC 自体を ToR 名前空間に移す |
 | クライアント → ToR1 / ToR2 | `client:eth1` ↔ `tor1:eth2`、`client:eth2` ↔ `tor2:eth2` |
 | control plane の Node IP と API | `10.220.255.10/32`、API は TCP 6443 |
 | worker の Node IP | `10.220.255.11/32` |
@@ -54,6 +54,8 @@ sudo docker exec clab-cilium-l3-tor1 vtysh -c 'show bgp ipv4 unicast summary' -c
 ```bash
 sudo ./lab.sh up
 ```
+
+旧配線の2ノード環境から移行する場合は、control plane で旧チェックアウトの `sudo containerlab destroy --topo topology.clab.yml --cleanup` を実行する。同じディレクトリの `.lab-state/kubeadm/` から `topology-started` と `topology-ready` を削除し、新しいチェックアウトの `sudo ./lab.sh up` で配線を再構築する。既に join 済みの worker で再度 join する必要はない。
 
 管理端末で次を実行する。両 VM に同じリポジトリを `~/infra-lab-dual` に配置した例。join トークンはこの SSH パイプ経由で worker に渡し、20分で失効する。
 

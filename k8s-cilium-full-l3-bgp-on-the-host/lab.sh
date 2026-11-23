@@ -132,8 +132,14 @@ preserve_lab_routes() {
   fi
 }
 
+worker_nics() {
+  local action=$1 index
+  for index in "${!worker_links[@]}"; do
+    ../common/tor-nic.sh "$action" "${worker_links[index]}" "${tors[index]}" eth3
+  done
+}
+
 prepare_node() {
-  local link
   if [[ ! -f $state/owned ]]; then
     if [[ -e /etc/kubernetes/admin.conf || -e /etc/kubernetes/kubelet.conf ||
           -e /etc/kubernetes/manifests/kube-apiserver.yaml ]] ||
@@ -152,8 +158,6 @@ prepare_node() {
     echo 'This lab requires a VM with swap disabled.' >&2
     return 1
   fi
-
-  for link in "${worker_links[@]}"; do ip link show "$link" >/dev/null; done
 
   modprobe overlay
   modprobe br_netfilter
@@ -178,6 +182,7 @@ prepare_node() {
     fi
     touch "$state/topology-started"
     containerlab deploy --topo "$topology"
+    if [[ $role == control-plane ]]; then worker_nics attach; fi
     touch "$state/topology-ready"
   fi
   configure_pod_routing
@@ -336,10 +341,16 @@ wait_for_fabric() {
         no_ipv4_default ip -j -4 route show table "$egress_table" default &&
         check_routes "$worker_interfaces" "${worker_routes[@]}" -6 route show table "$egress_table" default &&
         no_ipv4_default "${worker_routes[@]}" -4 route show table "$egress_table" default &&
+        check_routes "$worker_interfaces" "${worker_routes[@]}" -4 route show table "$egress_table" exact "$control_ip/32" &&
+        check_routes "$worker_interfaces" "${worker_routes[@]}" -4 route show table "$egress_table" exact "$client_ip/32" &&
         check_routes "$worker_interfaces" "${worker_routes[@]}" -4 route show table "$egress_table" exact "$control_pod_ip/32" &&
+        check_routes "$client_interfaces" docker exec "$client" ip -j -4 route show exact "$control_ip/32" &&
+        check_routes "$client_interfaces" docker exec "$client" ip -j -4 route show exact "$worker_ip/32" &&
         check_routes "$client_interfaces" docker exec "$client" ip -j -4 route show exact "$worker_pod_ip/32" &&
         check_routes "$client_interfaces" docker exec "$client" ip -j -4 route show exact "$control_pod_ip/32" &&
         check_routes "$client_interfaces" docker exec "$client" ip -j -4 route show exact "$vip/32" &&
+        check_routes "$node_interfaces" ip -j -4 route show table "$egress_table" exact "$client_ip/32" &&
+        check_routes "$node_interfaces" ip -j -4 route show table "$egress_table" exact "$worker_ip/32" &&
         check_routes "$node_interfaces" ip -j -4 route show table "$egress_table" exact "$worker_pod_ip/32" &&
         check_tors "$control_pod_ip" "$worker_pod_ip" "$@"; do
     if (( SECONDS >= deadline )); then
@@ -462,6 +473,7 @@ down() {
   ip -4 rule del pref 22011 from "$pod_network" lookup "$egress_table" 2>/dev/null || true
   ip -4 rule del pref 22010 from "$pod_network" lookup main suppress_prefixlength 0 2>/dev/null || true
   if [[ -f $state/topology-started ]]; then
+    if [[ $role == control-plane ]]; then worker_nics detach; fi
     containerlab destroy --topo "$topology" --cleanup
     rm -f "$state/topology-started" "$state/topology-ready"
   fi

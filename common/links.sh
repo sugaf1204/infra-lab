@@ -3,15 +3,17 @@ set -euo pipefail
 export LC_ALL=C
 
 if [[ $EUID != 0 || $(uname -s) != Linux || $# != 2 ]]; then
-  echo "Usage: sudo $0 {attach|name} {fabric|k8s-worker|openstack|openstack-compute}" >&2
+  echo "Usage: sudo $0 {attach|name} {fabric|k8s-worker|openstack|openstack-compute|openstack-fabric-controller|openstack-fabric-compute}" >&2
   exit 2
 fi
 
 case "$2" in
   fabric) vm=infra-lab-fabric; prefix=k8s; mac_base=52:54:00:31:01 ;;
   k8s-worker) vm=infra-lab-k8s-worker; prefix=k8s; mac_base=52:54:00:31:02 ;;
-  openstack) vm=infra-lab-openstack; prefix=ovn; mac_base=52:54:00:32:01 ;;
+  openstack) vm=infra-lab-openstack; prefix=ovn-ctl; mac_base=52:54:00:32:05 ;;
   openstack-compute) vm=infra-lab-openstack-compute; prefix=ovn; mac_base=52:54:00:32:02 ;;
+  openstack-fabric-controller) vm=infra-lab-fabric; prefix=ovn-ctl; mac_base=52:54:00:32:03 ;;
+  openstack-fabric-compute) vm=infra-lab-fabric; prefix=ovn; mac_base=52:54:00:32:04 ;;
   *) exit 2 ;;
 esac
 

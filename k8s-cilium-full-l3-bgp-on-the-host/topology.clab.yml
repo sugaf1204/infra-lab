@@ -48,9 +48,3 @@ topology:
       host-interface: cilium-tor2
     - endpoints: ["tor1:eth2", "client:eth1"]
     - endpoints: ["tor2:eth2", "client:eth2"]
-    - type: macvlan
-      endpoint: {node: tor1, interface: eth3}
-      host-interface: k8s-tor1
-    - type: macvlan
-      endpoint: {node: tor2, interface: eth3}
-      host-interface: k8s-tor2

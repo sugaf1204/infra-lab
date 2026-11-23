@@ -14,7 +14,7 @@ graph management {
     nic [label="eno1\nPhysical NIC"];
     bridge [label="br0\nHost LAN bridge"];
     nat [label="virbr0\nlibvirt default · NAT"];
-    fabric [label="VM · infra-lab-fabric\nKubernetes control plane + CLOS"];
+    fabric [label="VM · infra-lab-fabric\nKubernetes control plane + CLOS\nOpenStack fabric"];
     worker [label="VM · infra-lab-k8s-worker\nKubernetes worker"];
     openstack [label="VM · infra-lab-openstack\nController + compute"];
     compute [label="VM · infra-lab-openstack-compute\nCompute"];

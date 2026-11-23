@@ -13,8 +13,6 @@ digraph cilium {
     tor1 [label="ToR1 container · AS65101"];
     tor2 [label="ToR2 container · AS65102"];
     {rank=same; tor1; tor2}
-    bridge1 [label="k8s-tor1 · VirtIO"];
-    bridge2 [label="k8s-tor2 · VirtIO"];
 
     subgraph cluster_control {
       label="Kubernetes control plane"; labelloc=b;
@@ -30,9 +28,6 @@ digraph cilium {
     client -> tor2 [dir=none, label="eth2 ↔ eth2"];
     tor1 -> control [dir=none, label="eth1 ↔ cilium-tor1"];
     tor2 -> control [dir=none, label="eth1 ↔ cilium-tor2"];
-    tor1 -> bridge1 [dir=none, label="eth3 · MACVLAN"];
-    tor2 -> bridge2 [dir=none, label="eth3 · MACVLAN"];
-    {rank=same; bridge1; bridge2; control}
   }
 
   subgraph cluster_worker {
@@ -45,6 +40,6 @@ digraph cilium {
     wk_cilium -> wk_pod [dir=none, label="lxc… ↔ eth0 · veth"];
   }
 
-  bridge1 -> worker [dir=none, label="worker k8s-tor1\nL2 segment 1"];
-  bridge2 -> worker [dir=none, label="worker k8s-tor2\nL2 segment 2"];
+  tor1 -> worker [dir=none, label="eth3 ↔ k8s-tor1\nDedicated L2"];
+  tor2 -> worker [dir=none, label="eth3 ↔ k8s-tor2\nDedicated L2"];
 }

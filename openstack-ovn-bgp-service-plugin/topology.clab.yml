@@ -16,12 +16,6 @@ topology:
         net.ipv6.conf.all.disable_ipv6: "0"
         net.ipv6.conf.default.disable_ipv6: "0"
   nodes:
-    infra-lab-openstack:
-      kind: host
-    clab-ovn-tor1:
-      kind: bridge
-    clab-ovn-tor2:
-      kind: bridge
     leaf1:
       kind: linux
       binds:
@@ -37,9 +31,5 @@ topology:
       exec:
         - ip address replace 203.0.113.10/32 dev lo
   links:
-    - endpoints: ["leaf1:eth1", "infra-lab-openstack:ovnbgp-uplink"]
-    - endpoints: ["leaf2:eth1", "infra-lab-openstack:ovnbgp-uplink1"]
     - endpoints: ["leaf1:eth2", "spine:eth1"]
     - endpoints: ["leaf2:eth2", "spine:eth2"]
-    - endpoints: ["leaf1:eth3", "clab-ovn-tor1:ovn-leaf1-p2p"]
-    - endpoints: ["leaf2:eth3", "clab-ovn-tor2:ovn-leaf2-p2p"]

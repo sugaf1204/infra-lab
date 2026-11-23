@@ -6,31 +6,46 @@ case "${1:-}:$#" in
   *) echo "Usage: $0 {deploy|configure|destroy}" >&2; exit 2 ;;
 esac
 
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+fabric_nics() {
+  local action=$1 index leaf
+  for index in 1 2; do
+    leaf=clab-ovn-bgp-leaf$index
+    ../common/tor-nic.sh "$action" "ovn-ctl-tor$index" "$leaf" eth1
+    ../common/tor-nic.sh "$action" "ovn-tor$index" "$leaf" eth3
+  done
+}
+
 current_host=$(hostname -s)
-case "$current_host" in
-  infra-lab-openstack)
+case "$current_host:$1" in
+  infra-lab-fabric:deploy)
+    for port in ovn-ctl-tor1 ovn-ctl-tor2 ovn-tor1 ovn-tor2; do
+      ip link show "$port" >/dev/null
+    done
+    containerlab deploy -t topology.clab.yml
+    fabric_nics attach
+    exit 0
+    ;;
+  infra-lab-fabric:destroy)
+    fabric_nics detach
+    exec containerlab destroy --cleanup -t topology.clab.yml
+    ;;
+  infra-lab-openstack:configure|infra-lab-openstack:destroy)
     node_ip=203.0.113.31/32
-    uplinks=(ovnbgp-uplink ovnbgp-uplink1)
-    remote_links=(ovn-tor1 ovn-tor2)
-    remote_bridges=(clab-ovn-tor1 clab-ovn-tor2)
+    uplinks=(ovn-ctl-tor1 ovn-ctl-tor2)
     frr_config=frr/chassis.conf
     ;;
-  infra-lab-openstack-compute)
+  infra-lab-openstack-compute:configure|infra-lab-openstack-compute:destroy)
     node_ip=203.0.113.32/32
     uplinks=(ovn-tor1 ovn-tor2)
     frr_config=frr/compute.conf
-    if [[ $1 == deploy ]]; then
-      echo 'Deploy the fabric on infra-lab-openstack; run configure on compute.' >&2
-      exit 2
-    fi
     ;;
   *)
-    printf 'Run on an OpenStack lab VM. Current host is %s.\n' "$current_host" >&2
-    exit 1
+    echo 'Deploy the fabric on infra-lab-fabric and configure on each OpenStack chassis.' >&2
+    exit 2
     ;;
 esac
 
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 bridges=(br-bgp-0 br-bgp-1)
 
 if [[ $1 == destroy ]]; then
@@ -40,37 +55,10 @@ if [[ $1 == destroy ]]; then
   ip -4 rule del pref 10111 from "$node_ip" unreachable 2>/dev/null || true
   ip -4 rule del pref 10110 from "$node_ip" lookup 10 2>/dev/null || true
   ip -4 address del "$node_ip" dev lo 2>/dev/null || true
-  if [[ $current_host == infra-lab-openstack ]]; then
-    containerlab destroy --cleanup -t topology.clab.yml
-    for bridge in "${remote_bridges[@]}"; do
-      if ip link show "$bridge" >/dev/null 2>&1; then
-        ip link del "$bridge" type bridge
-      fi
-    done
-  fi
   exit 0
 fi
 
-if [[ $current_host == infra-lab-openstack ]]; then
-  for index in "${!remote_links[@]}"; do
-    bridge=${remote_bridges[index]}
-    uplink=${remote_links[index]}
-    ip link show "$uplink" >/dev/null
-    if ! ip link show "$bridge" >/dev/null 2>&1; then
-      ip link add "$bridge" type bridge
-    fi
-    # These point-to-point bridges must forward IPv6 neighbor discovery.
-    ip link set dev "$bridge" type bridge mcast_snooping 0
-    sysctl -q -w "net.ipv6.conf.$bridge.disable_ipv6=1" "net.ipv6.conf.$uplink.disable_ipv6=1"
-    ip link set "$uplink" master "$bridge"
-    ip link set "$uplink" up
-    ip link set "$bridge" up
-  done
-fi
-
-if [[ $1 == deploy ]]; then
-  containerlab deploy -t topology.clab.yml
-fi
+for uplink in "${uplinks[@]}"; do ip link show "$uplink" >/dev/null; done
 ip -4 address replace "$node_ip" dev lo
 ovs-vsctl --may-exist add-br br-ex
 ip link set br-ex up

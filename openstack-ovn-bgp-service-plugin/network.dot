@@ -6,38 +6,38 @@ digraph ovn_bgp {
   edge [color="#475569", penwidth=1.4, fontname="Helvetica",
         fontcolor="#334155", fontsize=10, arrowsize=0.7];
 
-  spine [shape=plain, label=<
-    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-      <TR><TD COLSPAN="2"><B>spine</B><BR/>FRR · AS65233 · lo 203.0.113.10/32</TD></TR>
-      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
-    </TABLE>>];
-  leaf1 [shape=plain, label=<
-    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-      <TR><TD PORT="eth2" COLSPAN="2" BGCOLOR="#dbeafe">eth2</TD></TR>
-      <TR><TD COLSPAN="2"><B>leaf1 · ToR</B><BR/>FRR · AS65232</TD></TR>
-      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth3" BGCOLOR="#dbeafe">eth3</TD></TR>
-    </TABLE>>];
-  leaf2 [shape=plain, label=<
-    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
-      <TR><TD PORT="eth2" COLSPAN="2" BGCOLOR="#dbeafe">eth2</TD></TR>
-      <TR><TD COLSPAN="2"><B>leaf2 · ToR</B><BR/>FRR · AS65234</TD></TR>
-      <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth3" BGCOLOR="#dbeafe">eth3</TD></TR>
-    </TABLE>>];
-  {rank=same; leaf1; leaf2}
+  subgraph cluster_fabric {
+    label="Fabric VM"; labeljust=l; color="#94a3b8"; style=rounded; margin=16;
+    spine [shape=plain, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
+        <TR><TD COLSPAN="2"><B>spine</B><BR/>FRR · AS65233 · lo 203.0.113.10/32</TD></TR>
+        <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth2" BGCOLOR="#dbeafe">eth2</TD></TR>
+      </TABLE>>];
+    leaf1 [shape=plain, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
+        <TR><TD PORT="eth2" COLSPAN="2" BGCOLOR="#dbeafe">eth2</TD></TR>
+        <TR><TD COLSPAN="2"><B>leaf1 · ToR</B><BR/>FRR · AS65232</TD></TR>
+        <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth3" BGCOLOR="#dbeafe">eth3</TD></TR>
+      </TABLE>>];
+    leaf2 [shape=plain, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#64748b" BGCOLOR="#eff6ff">
+        <TR><TD PORT="eth2" COLSPAN="2" BGCOLOR="#dbeafe">eth2</TD></TR>
+        <TR><TD COLSPAN="2"><B>leaf2 · ToR</B><BR/>FRR · AS65234</TD></TR>
+        <TR><TD PORT="eth1" BGCOLOR="#dbeafe">eth1</TD><TD PORT="eth3" BGCOLOR="#dbeafe">eth3</TD></TR>
+      </TABLE>>];
+    {rank=same; leaf1; leaf2}
+  }
 
   subgraph cluster_controller {
     label="OpenStack controller + compute VM"; labeljust=l; labelloc=b;
     style=rounded; color="#94a3b8"; margin=16;
     controller_ports [shape=plain, label=<
       <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b" BGCOLOR="#eff6ff">
-        <TR><TD PORT="tor1" BGCOLOR="#dbeafe">ovnbgp-uplink</TD><TD PORT="tor2" BGCOLOR="#dbeafe">ovnbgp-uplink1</TD></TR>
+        <TR><TD PORT="tor1" BGCOLOR="#dbeafe">ovn-ctl-tor1</TD><TD PORT="tor2" BGCOLOR="#dbeafe">ovn-ctl-tor2</TD></TR>
         <TR><TD>br-bgp-0</TD><TD>br-bgp-1</TD></TR>
         <TR><TD COLSPAN="2"><B>FRR · AS65231</B><BR/>lo 203.0.113.31/32</TD></TR>
       </TABLE>>];
     controller_ovn [label="OVN · br-int / br-ex\nTenant flat provider network"];
-    relay1 [label="clab-ovn-tor1\novn-leaf1-p2p ↔ ovn-tor1"];
-    relay2 [label="clab-ovn-tor2\novn-leaf2-p2p ↔ ovn-tor2"];
-    {rank=same; controller_ports; relay1; relay2}
     subgraph cluster_controller_guest {
       label="CirrOS VM"; labelloc=b; color="#94a3b8"; style=rounded;
       vm1 [label="Fixed IP 10.53.0.22/32", fillcolor="#f0fdf4"];
@@ -66,10 +66,8 @@ digraph ovn_bgp {
 
   spine:eth1:s -> leaf1:eth2:n [dir=none];
   spine:eth2:s -> leaf2:eth2:n [dir=none];
-  leaf1:eth1:s -> controller_ports:tor1:n [dir=none];
-  leaf2:eth1:s -> controller_ports:tor2:n [dir=none];
-  leaf1:eth3:s -> relay1:n [dir=none];
-  leaf2:eth3:s -> relay2:n [dir=none];
-  relay1:s -> compute_ports:tor1:n [dir=none, label="  private L2 · ToR 1"];
-  relay2:s -> compute_ports:tor2:n [dir=none, label="  private L2 · ToR 2"];
+  leaf1:eth1:s -> controller_ports:tor1:n [dir=none, label="L2"];
+  leaf2:eth1:s -> controller_ports:tor2:n [dir=none, label="L2"];
+  leaf1:eth3:s -> compute_ports:tor1:n [dir=none, label="L2"];
+  leaf2:eth3:s -> compute_ports:tor2:n [dir=none, label="L2"];
 }
