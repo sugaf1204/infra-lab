@@ -1,0 +1,9 @@
+conf:
+  ceph: {enabled: false}
+# OVN 構成では neutron-ovs-agent が存在しないため、既定の Pod 依存を外す（values_overrides/libvirt/ovn.yaml と同じ）。
+dependencies:
+  dynamic:
+    targeted:
+      openvswitch:
+        libvirt:
+          pod: []

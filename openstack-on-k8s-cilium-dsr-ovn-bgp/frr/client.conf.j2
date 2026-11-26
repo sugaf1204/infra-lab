@@ -1,0 +1,31 @@
+! Kubernetes 外の検証用クライアント
+frr defaults datacenter
+hostname {{ node.name }}
+!
+interface lo
+ ip address {{ node.address }}/32
+exit
+!
+ip prefix-list DEFAULT-ONLY permit 0.0.0.0/0
+route-map SET-SRC permit 10
+ match ip address prefix-list DEFAULT-ONLY
+ set src {{ node.address }}
+!
+ip protocol bgp route-map SET-SRC
+!
+router bgp {{ node.asn }}
+ bgp router-id {{ node.address }}
+ no bgp default ipv4-unicast
+ bgp bestpath as-path multipath-relax
+ neighbor LEAVES peer-group
+ neighbor LEAVES remote-as external
+ neighbor LEAVES timers 3 9
+ neighbor eth1 interface peer-group LEAVES
+ neighbor eth2 interface peer-group LEAVES
+ address-family ipv4 unicast
+  network {{ node.address }}/32
+  neighbor LEAVES activate
+  neighbor LEAVES prefix-list DEFAULT-ONLY in
+  maximum-paths 2
+ exit-address-family
+!

@@ -1,0 +1,26 @@
+# ラボ全体の単一の定義。FRR 設定・Containerlab トポロジー・Kind クラスタ定義をここから生成する。
+lab_name: osk-bgp
+mgmt_subnet: 172.20.22.0/24
+kind_network: kind-osk-bgp
+kind_subnet: 172.20.24.0/24
+pod_subnet: 10.240.0.0/20
+service_subnet: 10.241.0.0/16
+cilium_asn: 65201
+cilium_peer_asn: 65200
+
+fabric_nodes:
+  - {name: nat, role: nat, address: 100.64.1.1, asn: 65099, spine1_ip: 100.64.1.1/30, spine2_ip: 100.64.1.5/30}
+  - {name: spine1, role: spine, address: 10.212.255.3, asn: 65001, nat_local: 100.64.1.2/30, nat_gw: 100.64.1.1}
+  - {name: spine2, role: spine, address: 10.212.255.4, asn: 65002, nat_local: 100.64.1.6/30, nat_gw: 100.64.1.5}
+  - {name: leaf1, role: leaf, address: 10.212.255.1, asn: 65101}
+  - {name: leaf2, role: leaf, address: 10.212.255.2, asn: 65102}
+  # 外部クライアント（Kubernetes 外）。両 Leaf に BGP Unnumbered で接続する。
+  - {name: client, role: client, address: 10.212.255.100, asn: 65300}
+  # Kubernetes ノード。kind はノード名を固定するため、kind_node で対応を明示する。
+  - {name: cp, role: node, group: control-plane, kind_node: osk-bgp-control-plane, address: 10.240.255.10, asn: 65210}
+  - {name: l4lb1, role: node, group: l4lb, kind_node: osk-bgp-worker, address: 10.240.255.21, asn: 65221}
+  - {name: l4lb2, role: node, group: l4lb, kind_node: osk-bgp-worker2, address: 10.240.255.22, asn: 65222}
+  - {name: l7lb1, role: node, group: l7lb, kind_node: osk-bgp-worker3, address: 10.240.255.31, asn: 65231}
+  - {name: osctl1, role: node, group: openstack-controller, kind_node: osk-bgp-worker4, address: 10.240.255.41, asn: 65241}
+  - {name: cmp1, role: compute, group: openstack-compute, kind_node: osk-bgp-worker5, address: 10.240.255.51, asn: 65251}
+  - {name: cmp2, role: compute, group: openstack-compute, kind_node: osk-bgp-worker6, address: 10.240.255.52, asn: 65252}

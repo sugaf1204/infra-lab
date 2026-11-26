@@ -1,0 +1,33 @@
+- name: Render FRR, Containerlab and Kind definitions from nodes.yml
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - "{{ lab_dir }}/nodes.yml"
+  vars:
+    hosts_on_leaf: "{{ fabric_nodes | selectattr('role', 'in', ['client', 'node', 'compute']) | list }}"
+    k8s_nodes: "{{ fabric_nodes | selectattr('kind_node', 'defined') | list }}"
+  tasks:
+    - name: Create output directory
+      ansible.builtin.file:
+        path: "{{ lab_dir }}/rendered"
+        state: directory
+        mode: "0755"
+
+    - name: Render each node's routing policy
+      ansible.builtin.template:
+        src: "{{ lab_dir }}/frr/{{ node.role }}.conf.j2"
+        dest: "{{ lab_dir }}/rendered/{{ node.name }}.conf"
+        mode: "0644"
+      loop: "{{ fabric_nodes }}"
+      loop_control:
+        loop_var: node
+        label: "{{ node.name }}"
+
+    - name: Render topology and cluster definitions
+      ansible.builtin.template:
+        src: "{{ lab_dir }}/templates/{{ item }}.j2"
+        dest: "{{ lab_dir }}/rendered/{{ item }}"
+        mode: "0644"
+      loop:
+        - topology.clab.yml
+        - cluster.yaml

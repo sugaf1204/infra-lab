@@ -1,0 +1,85 @@
+# L4LB ノード群だけが LoadBalancer VIP を広告する。その他のノードはホスト FRR とピアを張るが広告しない。
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: l4lb
+spec:
+  blocks:
+    - cidr: 10.240.250.0/24
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPAdvertisement
+metadata:
+  name: l4lb-vips
+  labels:
+    lab.infra/advertise: l4lb-vips
+spec:
+  advertisements:
+    - advertisementType: Service
+      service:
+        addresses:
+          - LoadBalancerIP
+      selector:
+        matchLabels:
+          lab.infra/l4lb: "true"
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPPeerConfig
+metadata:
+  name: host-frr-l4lb
+spec:
+  ebgpMultihop: 2
+  timers: {connectRetryTimeSeconds: 5, holdTimeSeconds: 9, keepAliveTimeSeconds: 3}
+  families:
+    - afi: ipv4
+      safi: unicast
+      advertisements:
+        matchLabels:
+          lab.infra/advertise: l4lb-vips
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPPeerConfig
+metadata:
+  name: host-frr
+spec:
+  ebgpMultihop: 2
+  timers: {connectRetryTimeSeconds: 5, holdTimeSeconds: 9, keepAliveTimeSeconds: 3}
+  families:
+    - afi: ipv4
+      safi: unicast
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPClusterConfig
+metadata:
+  name: l4lb
+spec:
+  nodeSelector:
+    matchLabels:
+      lab.infra/group: l4lb
+  bgpInstances:
+    - name: host-frr
+      localASN: 65201
+      peers:
+        - name: host-frr
+          peerASN: 65200
+          peerAddress: 127.0.0.1
+          peerConfigRef:
+            name: host-frr-l4lb
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPClusterConfig
+metadata:
+  name: non-l4lb
+spec:
+  nodeSelector:
+    matchExpressions:
+      - {key: lab.infra/group, operator: NotIn, values: [l4lb]}
+  bgpInstances:
+    - name: host-frr
+      localASN: 65201
+      peers:
+        - name: host-frr
+          peerASN: 65200
+          peerAddress: 127.0.0.1
+          peerConfigRef:
+            name: host-frr

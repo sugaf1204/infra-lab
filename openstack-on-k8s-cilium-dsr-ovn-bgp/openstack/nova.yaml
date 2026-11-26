@@ -1,0 +1,19 @@
+network:
+  backend: [ovn]
+bootstrap:
+  wait_for_computes: {enabled: true}
+conf:
+  ceph: {enabled: false}
+  nova:
+    DEFAULT:
+      vif_plugging_is_fatal: true
+      vif_plugging_timeout: 300
+    libvirt:
+      virt_type: kvm
+manifests:
+  deployment_novncproxy: false
+  deployment_serialproxy: false
+  deployment_spiceproxy: false
+  service_novncproxy: false
+  service_serialproxy: false
+  service_spiceproxy: false

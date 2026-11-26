@@ -8,6 +8,7 @@ node3 上の検証専用 Linux VM で、Containerlab を使って IPv4 の宛先
 | [Full L3 IP Clos](full-l3-ip-clos/) | 共有 2-Spine / 2-Leaf + NAT、デフォルトの ECMP・外向き通信・片系断 |
 | [OpenStack OVN BGP Service Plugin](openstack-ovn-bgp-service-plugin/) | 2 chassis（共有 Leaf 収容）、テナント所有の flat provider network、VM 固定 IP /32 の広告・撤回 |
 | [Kubernetes Cilium Full L3 BGP on the Host](k8s-cilium-full-l3-bgp-on-the-host/) | Kind + 共有 Containerlab（`infra-lab-switches` 上で完結）、Pod IP 個別 /32・ノード IP・LoadBalancer VIP の広告 |
+| [OpenStack on Kubernetes + Cilium DSR + OVN BGP](openstack-on-k8s-cilium-dsr-ovn-bgp/) | 専用ファブリック + Kind 7 ノード上の openstack-helm（ML2/OVN、`ovn-bgp`）、L4LB の Geneve DSR による VM / L7LB への転送とクライアント IP 保持、VM 固定 IP /32 の広告・撤回 |
 
 [共通セットアップ](common/README.md)を実行してから、各ラボの README に従う。別 VM 上の各ノードと ToR は libvirt の独立したポイントツーポイント L2 で接続し、fabric VM 側の専用 virtio NIC を ToR のネットワーク名前空間に割り当てる。
 

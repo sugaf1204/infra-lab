@@ -1,0 +1,16 @@
+images:
+  tags:
+    openvswitch_db_server: quay.io/airshipit/openvswitch:latest-ubuntu_resolute
+    openvswitch_vswitchd: quay.io/airshipit/openvswitch:latest-ubuntu_resolute
+# os-vif（nova-compute）が tcp:127.0.0.1:6640 で OVSDB に接続する（values_overrides/openvswitch/ovn.yaml と同じ）。
+conf:
+  openvswitch_db_server:
+    ptcp_port: 6640
+  # ovn-controller を root で動かす（openstack/ovn.yaml 参照）と /run/openvswitch の所有者が root になるため、OVS も root に揃える。
+  ovs_user_name: "root:root"
+pod:
+  security_context:
+    ovs:
+      pod: {runAsUser: 0}
+      container:
+        server: {runAsUser: 0}
