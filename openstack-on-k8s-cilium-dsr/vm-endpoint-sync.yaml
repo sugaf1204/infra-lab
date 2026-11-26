@@ -1,0 +1,149 @@
+# Neutron ポートの「固定 IP → 収容 compute」を CiliumEndpoint として公開するコントローラー。
+# Cilium の Geneve DSR は外側宛先をバックエンド IP のトンネル端点（ノード IP）から引く。
+# VM は Cilium の管理外なので、この対応を CiliumEndpoint で与えると、L4LB が VM の載る
+# compute ノードへカプセル化し、その compute の Cilium が DSR を終端する。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openstack-vms
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vm-endpoint-sync
+  namespace: openstack
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vm-endpoint-sync
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list]
+  - apiGroups: [cilium.io]
+    resources: [ciliumendpoints]
+    verbs: [get, list, create, update, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vm-endpoint-sync
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vm-endpoint-sync
+subjects:
+  - kind: ServiceAccount
+    name: vm-endpoint-sync
+    namespace: openstack
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vm-endpoint-sync
+  namespace: openstack
+data:
+  sync.py: |
+    import os, time, traceback
+    import openstack, requests
+
+    NS = "openstack-vms"
+    API = "https://kubernetes.default.svc"
+    SA = "/var/run/secrets/kubernetes.io/serviceaccount"
+    CEPS = f"{API}/apis/cilium.io/v2/namespaces/{NS}/ciliumendpoints"
+    LABEL = {"infra-lab/managed-by": "vm-endpoint-sync"}
+
+    def k8s():
+        s = requests.Session()
+        s.verify = f"{SA}/ca.crt"
+        s.headers["Authorization"] = "Bearer " + open(f"{SA}/token").read()
+        return s
+
+    def desired(conn, s):
+        nodes = {}
+        for n in s.get(f"{API}/api/v1/nodes").json()["items"]:
+            ips = [a["address"] for a in n["status"]["addresses"] if a["type"] == "InternalIP"]
+            if ips:
+                nodes[n["metadata"]["name"]] = (ips[0], n["metadata"]["uid"])
+        want = {}
+        for p in conn.network.ports(device_owner="compute:nova"):
+            node = nodes.get(p.binding_host_id)
+            if p.status != "ACTIVE" or not node:
+                continue
+            v4 = [f["ip_address"] for f in p.fixed_ips if ":" not in f["ip_address"]]
+            if v4:
+                # owner を収容 compute の Node にする。cilium-operator は Pod 以外の owner を持つ
+                # CiliumEndpoint を回収しない（owner なしだと約 5 分ごとに「Pod のない孤児」として消す）。
+                owner = {"apiVersion": "v1", "kind": "Node", "name": p.binding_host_id, "uid": node[1]}
+                want[f"port-{p.id}"] = (v4[0], node[0], owner)
+        return want
+
+    def sync(conn, s):
+        want = desired(conn, s)
+        have = {c["metadata"]["name"]: c for c in s.get(CEPS).json()["items"]
+                if c["metadata"].get("labels", {}).get("infra-lab/managed-by") == "vm-endpoint-sync"}
+        for name, (ip, node_ip, owner) in want.items():
+            status = {
+                # VM はクラスタ外のワークロードなので world として扱う
+                "identity": {"id": 2, "labels": ["reserved:world"]},
+                "networking": {"addressing": [{"ipv4": ip}], "node": node_ip},
+                "state": "ready",
+            }
+            cur = have.get(name)
+            if cur is None:
+                body = {"apiVersion": "cilium.io/v2", "kind": "CiliumEndpoint",
+                        "metadata": {"name": name, "namespace": NS, "labels": LABEL,
+                                     "ownerReferences": [owner]}, "status": status}
+                s.post(CEPS, json=body).raise_for_status()
+                print(f"created {name}: {ip} -> {node_ip}", flush=True)
+            elif (cur.get("status", {}).get("networking") != status["networking"]
+                  or [o.get("uid") for o in cur["metadata"].get("ownerReferences", [])] != [owner["uid"]]):
+                cur["status"] = status
+                cur["metadata"]["ownerReferences"] = [owner]
+                s.put(f"{CEPS}/{name}", json=cur).raise_for_status()
+                print(f"updated {name}: {ip} -> {node_ip}", flush=True)
+        for name in have.keys() - want.keys():
+            s.delete(f"{CEPS}/{name}").raise_for_status()
+            print(f"deleted {name}", flush=True)
+
+    conn = openstack.connect()
+    while True:
+        try:
+            sync(conn, k8s())
+        except Exception:
+            traceback.print_exc()
+        time.sleep(int(os.environ.get("INTERVAL", "5")))
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vm-endpoint-sync
+  namespace: openstack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vm-endpoint-sync
+  template:
+    metadata:
+      labels:
+        app: vm-endpoint-sync
+    spec:
+      serviceAccountName: vm-endpoint-sync
+      nodeSelector:
+        openstack-control-plane: enabled
+      containers:
+        - name: sync
+          image: quay.io/airshipit/openstack-client:2026.2-ubuntu_resolute
+          command: ["python3", "-u", "/sync/sync.py"]
+          envFrom:
+            - secretRef:
+                name: keystone-keystone-admin
+          volumeMounts:
+            - name: script
+              mountPath: /sync
+      volumes:
+        - name: script
+          configMap:
+            name: vm-endpoint-sync

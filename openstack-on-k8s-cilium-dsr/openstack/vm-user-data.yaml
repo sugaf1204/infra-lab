@@ -1,6 +1,6 @@
 #cloud-config
-# L4LB（Cilium DSR IPIP）のバックエンドになるゲスト設定。
-# IPIP を tunl0 で受け、VIP をループバックに持ち、VIP を送信元にして直接応答する。
+# L4LB のバックエンドになるゲスト。DSR の終端は compute ノードの Cilium が行うため、
+# ゲストには接続元を返す HTTP サーバーだけを置く（トンネルや VIP の設定は持たない）。
 write_files:
   - path: /usr/local/bin/whoami-server.py
     permissions: "0755"
@@ -20,10 +20,6 @@ write_files:
       [Unit]
       After=network-online.target
       [Service]
-      ExecStartPre=/sbin/modprobe ipip
-      ExecStartPre=/sbin/ip link set tunl0 up
-      ExecStartPre=/sbin/sysctl -w net.ipv4.conf.all.rp_filter=0 net.ipv4.conf.tunl0.rp_filter=0
-      ExecStartPre=/bin/sh -c 'for vip in __VIPS__; do ip addr replace $vip/32 dev lo; done'
       ExecStart=/usr/local/bin/whoami-server.py
       Restart=always
       [Install]

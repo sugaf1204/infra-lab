@@ -17,10 +17,14 @@ bgpControlPlane:
 kubeProxyReplacement: true
 socketLB:
   enabled: false
-# L4LB は DSR + IPIP。Geneve DSR は Cilium 管理外のバックエンド（OpenStack VM）宛てを破棄するため IPIP を使う。
+# L4LB は DSR + Geneve。VM 内で IPIP を終端する方式は却下したため、VM が載る compute ノードの
+# Cilium に DSR を終端させる。Geneve は外側宛先がバックエンドのノードになる。
+# OVN の Geneve（UDP 6081）と衝突しないようポートを変える。
+tunnelProtocol: geneve
+tunnelPort: 6082
 loadBalancer:
   mode: dsr
-  dsrDispatch: ipip
+  dsrDispatch: geneve
   # L4LB は複数台で同じ VIP を広告する。ECMP の再計算や片系断で別の L4LB に届いても
   # 同じバックエンドを選ぶよう、L4LB 間で結果が一致する Maglev を使う。
   algorithm: maglev

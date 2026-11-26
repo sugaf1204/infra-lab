@@ -4,7 +4,6 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 export KUBECONFIG=$PWD/osk8s.kubeconfig
 os() { kubectl -n openstack exec deploy/openstack-client -- openstack "$@"; }
-vips="10.230.250.2 10.230.250.3"
 image_url=https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
 
 case "${1:-}" in
@@ -19,25 +18,21 @@ case "${1:-}" in
     os subnet show tenant-flat-v4 >/dev/null 2>&1 ||
       os subnet create --network tenant-flat --subnet-range 10.240.0.0/24 --gateway 10.240.0.1 --dhcp tenant-flat-v4
     if ! os security group show lab-dsr >/dev/null 2>&1; then
-      # DSR は行きが IPIP、戻りが VIP 送信元の TCP と非対称になる。ステートフルな
-      # セキュリティグループは戻りの SYN-ACK を破棄するため、ステートレスにする。
-      os security group create ${SG_OPTS---stateless} lab-dsr
+      # DSR の終端と戻りの書き換えは compute の Cilium が行うので、OVN から見た通信は
+      # 「クライアント IP ↔ VM 固定 IP」の対称な TCP になる。通常のステートフルな SG でよい。
+      os security group create lab-dsr
       os security group rule create --ingress --protocol icmp lab-dsr
       os security group rule create --ingress --protocol tcp --dst-port 80 lab-dsr
       os security group rule create --ingress --protocol tcp --dst-port 22 lab-dsr
-      # L4LB からの DSR は IPIP（IP プロトコル 4）で届く
-      os security group rule create --ingress --protocol 4 lab-dsr
     fi
     kubectl -n openstack exec -i deploy/openstack-client -- sh -c "cat > /tmp/user-data" \
-      < <(sed "s/__VIPS__/$vips/" openstack/vm-user-data.yaml)
+      < openstack/vm-user-data.yaml
     i=0
     for host in $(os compute service list --service nova-compute -f value -c Host | sort); do
       i=$((i + 1)); ip=10.240.0.2$i
       if ! os port show "vm$i" >/dev/null 2>&1; then
-        pairs=(); for vip in $vips; do pairs+=(--allowed-address "ip-address=$vip"); done
-        # VIP を送信元にした直接応答を port security が通すよう allowed-address-pairs に入れる
         os port create --network tenant-flat --fixed-ip "subnet=tenant-flat-v4,ip-address=$ip" \
-          --security-group lab-dsr "${pairs[@]}" "vm$i"
+          --security-group lab-dsr "vm$i"
       fi
       os server show "vm$i" >/dev/null 2>&1 ||
         os server create --flavor lab --image ubuntu-cloud --port "vm$i" --config-drive true \
