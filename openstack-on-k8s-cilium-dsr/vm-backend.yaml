@@ -1,4 +1,4 @@
-# OpenStack VM（Cilium 管理外）をバックエンドにする L4LB Service。
+# OpenStack VM をバックエンドにする L4LB Service。VM の所在は vm-endpoint-sync が CiliumEndpoint で与える。
 # セレクターなしの Service に VM の固定 IP を EndpointSlice で与える。
 apiVersion: v1
 kind: Service

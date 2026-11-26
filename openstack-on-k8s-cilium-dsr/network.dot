@@ -16,14 +16,14 @@ digraph osk8s {
     label="L4LB frontend ×2（osk8s-worker / worker2）"; labelloc=b;
     style=rounded; color="#94a3b8"; margin=12;
     l4frr [label="ホスト FRR · AS65211 / 65212\nlo 10.230.255.11 / .12"];
-    l4cil [label="Cilium · AS65201\nVIP 10.230.250.1 / .2 を広告\nDSR IPIP + Maglev"];
+    l4cil [label="Cilium · AS65201\nVIP 10.230.250.1 / .2 を広告\nDSR Geneve + Maglev"];
     l4frr -> l4cil [dir=back, style=dashed, color="#2563a5", label="eBGP 127.0.0.2 → 127.0.0.1"];
   }
   subgraph cluster_l7 {
     label="L7LB frontend（osk8s-worker3）"; labelloc=b;
     style=rounded; color="#94a3b8"; margin=12;
     l7frr [label="ホスト FRR · AS65213\nlo 10.230.255.13"];
-    l7pod [label="L7LB 相当 Pod（whoami）\nCilium が IPIP を終端", fillcolor="#f0fdf4"];
+    l7pod [label="L7LB 相当 Pod（whoami）\nCilium が Geneve DSR を終端", fillcolor="#f0fdf4"];
     l7frr -> l7pod [dir=none, label="lxc… ↔ eth0"];
   }
   subgraph cluster_ctl {
@@ -34,9 +34,9 @@ digraph osk8s {
   subgraph cluster_cmp {
     label="OpenStack compute ×2（osk8s-worker5 / worker6）· DaemonSet は hostNetwork"; labelloc=b;
     style=rounded; color="#94a3b8"; margin=12;
-    cmpfrr [label="ホスト FRR · AS65215 / 65216\nlo 10.230.255.15 / .16\nピア: br-bgp-0 / br-bgp-1\nVRF ovnvrf42 / ovnvrf10"];
+    cmpfrr [label="ホスト FRR · AS65215 / 65216 + Cilium\nlo 10.230.255.15 / .16\nピア: br-bgp-0 / br-bgp-1\nVRF ovnvrf42 / ovnvrf10\nGeneve DSR を終端し戻りを VIP に書き換え"];
     ovn [label="OVS + OVN\nbr-bgp-0(leaf1) / br-bgp-1(leaf2)\nbgp-lr-<chassis> → bgp-lr-main → br-ex"];
-    vm [label="VM vm1 / vm2\n10.240.0.21 / .22\ntunl0 で IPIP 受信 · lo に VIP", fillcolor="#f0fdf4"];
+    vm [label="VM vm1 / vm2（無改造）\n10.240.0.21 / .22", fillcolor="#f0fdf4"];
     cmpfrr -> ovn [dir=back, style=dashed, color="#2563a5", label="VM /32 をテーブル 42 に注入"];
     ovn -> vm [dir=none, label="tap… · flat network"];
   }
@@ -50,7 +50,7 @@ digraph osk8s {
   leaf1 -> ovn [dir=none, label="eth9/eth10 ↔ leaf1"];
   leaf2 -> ovn [dir=none, label="eth9/eth10 ↔ leaf2"];
 
-  l4cil -> l7pod [color="#b45309", constraint=false, label="IPIP（外側宛先 = Pod IP）"];
-  l4cil -> vm [color="#b45309", constraint=false, label="IPIP（外側宛先 = VM 固定 IP）"];
-  vm -> client [color="#15803d", constraint=false, label="VIP 送信元で直接応答"];
+  l4cil -> l7frr [color="#b45309", constraint=false, label="Geneve :6082（外側宛先 = L7LB ノード）"];
+  l4cil -> cmpfrr [color="#b45309", constraint=false, label="Geneve :6082（外側宛先 = VM の載る compute）"];
+  cmpfrr -> client [color="#15803d", constraint=false, label="VIP 送信元で直接応答"];
 }

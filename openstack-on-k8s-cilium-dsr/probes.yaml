@@ -54,6 +54,5 @@ spec:
   selector:
     app: l7lb
   ports:
-    # DSR IPIP はポート情報を運ばないため port と targetPort を一致させる
     - port: 80
       targetPort: 80

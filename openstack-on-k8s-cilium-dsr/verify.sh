@@ -35,12 +35,13 @@ check() { # <稼働中の leaf...>
   # L4LB -> L7LB: クライアント IP が保持されること
   out=$(fetch "$l7_vip") || { echo "GET $l7_vip failed"; return 1; }
   grep -q "^RemoteAddr: $client_ip:" <<<"$out" || { echo "L7LB saw: $out"; return 1; }
-  # L4LB -> VM: クライアント IP が保持され、VIP で応答し、両 VM に分散されること
+  # L4LB -> VM: クライアント IP が保持され、VM は自分の固定 IP で受け（VM 内に VIP やトンネルを
+  # 持たない）、両 VM に分散されること。VIP への書き戻しは compute の Cilium が行う。
   seen=
   for _ in $(seq 1 16); do
     out=$(fetch "$vm_vip") || { echo "GET $vm_vip failed"; return 1; }
     grep -q "^RemoteAddr: $client_ip:" <<<"$out" || { echo "VM saw: $out"; return 1; }
-    grep -q "^LocalAddr: $vm_vip$" <<<"$out" || { echo "VM replied from: $out"; return 1; }
+    grep -Eq "^LocalAddr: (${vm_ips[0]}|${vm_ips[1]})$" <<<"$out" || { echo "VM received on: $out"; return 1; }
     seen+="$(sed -n 's/^Hostname: //p' <<<"$out") "
   done
   [[ $(tr ' ' '\n' <<<"$seen" | sort -u | grep -c .) -eq 2 ]] || { echo "backends seen: $seen"; return 1; }

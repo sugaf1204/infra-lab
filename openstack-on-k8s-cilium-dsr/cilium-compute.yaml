@@ -10,4 +10,4 @@ spec:
     matchLabels:
       infra-lab/group: os-compute
   defaults:
-    devices: "br-bgp+ lo"
+    devices: "leaf+ br-bgp+ lo"
