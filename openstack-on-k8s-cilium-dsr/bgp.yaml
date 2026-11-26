@@ -1,0 +1,169 @@
+# L4LB frontend ノードだけが LoadBalancer VIP を広告する
+apiVersion: cilium.io/v2
+kind: CiliumBGPAdvertisement
+metadata:
+  name: l4lb-vips
+  labels:
+    infra-lab/advertise: l4lb
+spec:
+  advertisements:
+    - advertisementType: Service
+      service:
+        addresses:
+          - LoadBalancerIP
+      selector:
+        matchLabels:
+          infra-lab/l4lb: "true"
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPPeerConfig
+metadata:
+  name: host-frr-l4lb
+spec:
+  # ホスト FRR との eBGP（127.0.0.2 -> 127.0.0.1）
+  ebgpMultihop: 2
+  timers:
+    connectRetryTimeSeconds: 5
+    holdTimeSeconds: 9
+    keepAliveTimeSeconds: 3
+  families:
+    - afi: ipv4
+      safi: unicast
+      advertisements:
+        matchLabels:
+          infra-lab/advertise: l4lb
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPPeerConfig
+metadata:
+  name: host-frr-no-vips
+spec:
+  # ホスト FRR との eBGP（127.0.0.2 -> 127.0.0.1）
+  ebgpMultihop: 2
+  timers:
+    connectRetryTimeSeconds: 5
+    holdTimeSeconds: 9
+    keepAliveTimeSeconds: 3
+  families:
+    - afi: ipv4
+      safi: unicast
+      advertisements:
+        matchLabels:
+          infra-lab/advertise: none
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPClusterConfig
+metadata:
+  name: host-frr-l4lb
+spec:
+  nodeSelector:
+    matchExpressions:
+      - key: infra-lab/group
+        operator: In
+        values: [l4lb]
+  bgpInstances:
+    - name: host-frr
+      localASN: 65201
+      peers:
+        - name: host-frr
+          peerASN: 65200
+          peerAddress: 127.0.0.1
+          peerConfigRef:
+            name: host-frr-l4lb
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPClusterConfig
+metadata:
+  name: host-frr-no-vips
+spec:
+  nodeSelector:
+    matchExpressions:
+      - key: infra-lab/group
+        operator: NotIn
+        values: [l4lb]
+  bgpInstances:
+    - name: host-frr
+      localASN: 65201
+      peers:
+        - name: host-frr
+          peerASN: 65200
+          peerAddress: 127.0.0.1
+          peerConfigRef:
+            name: host-frr-no-vips
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPNodeConfigOverride
+metadata:
+  name: osk8s-control-plane
+spec:
+  bgpInstances:
+    - name: host-frr
+      peers:
+        - name: host-frr
+          localAddress: 127.0.0.2
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPNodeConfigOverride
+metadata:
+  name: osk8s-worker
+spec:
+  bgpInstances:
+    - name: host-frr
+      peers:
+        - name: host-frr
+          localAddress: 127.0.0.2
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPNodeConfigOverride
+metadata:
+  name: osk8s-worker2
+spec:
+  bgpInstances:
+    - name: host-frr
+      peers:
+        - name: host-frr
+          localAddress: 127.0.0.2
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPNodeConfigOverride
+metadata:
+  name: osk8s-worker3
+spec:
+  bgpInstances:
+    - name: host-frr
+      peers:
+        - name: host-frr
+          localAddress: 127.0.0.2
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPNodeConfigOverride
+metadata:
+  name: osk8s-worker4
+spec:
+  bgpInstances:
+    - name: host-frr
+      peers:
+        - name: host-frr
+          localAddress: 127.0.0.2
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPNodeConfigOverride
+metadata:
+  name: osk8s-worker5
+spec:
+  bgpInstances:
+    - name: host-frr
+      peers:
+        - name: host-frr
+          localAddress: 127.0.0.2
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPNodeConfigOverride
+metadata:
+  name: osk8s-worker6
+spec:
+  bgpInstances:
+    - name: host-frr
+      peers:
+        - name: host-frr
+          localAddress: 127.0.0.2

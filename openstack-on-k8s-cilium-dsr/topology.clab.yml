@@ -1,0 +1,140 @@
+name: osk8s
+mgmt:
+  network: clab-osk8s-mgmt
+  ipv4-subnet: 172.20.21.0/24
+topology:
+  groups:
+    router:
+      network-mode: none
+      image: quay.io/frrouting/frr:10.4.1
+      sysctls:
+        net.ipv4.ip_forward: 1
+        net.ipv4.fib_multipath_hash_policy: 1
+        net.ipv6.conf.all.disable_ipv6: 0
+        net.ipv6.conf.default.disable_ipv6: 0
+        net.ipv6.conf.default.accept_ra_defrtr: 0
+      binds:
+        - ../common/frr/daemons:/etc/frr/daemons:ro
+    spine:
+      network-mode: none
+      image: quay.io/frrouting/frr:10.4.1
+      sysctls:
+        net.ipv4.ip_forward: 1
+        net.ipv4.fib_multipath_hash_policy: 1
+        net.ipv6.conf.all.disable_ipv6: 0
+        net.ipv6.conf.default.disable_ipv6: 0
+        net.ipv6.conf.default.accept_ra_defrtr: 0
+      binds:
+        - frr/spine-daemons:/etc/frr/daemons:ro
+    # Kind ノードのネットワーク名前空間で動くホスト FRR
+    k8s-frr:
+      image: quay.io/frrouting/frr:10.4.1
+      binds:
+        - ../common/frr/daemons:/etc/frr/daemons:ro
+      exec:
+        - sysctl -w net.ipv4.ip_forward=1 net.ipv4.fib_multipath_hash_policy=1 net.ipv4.conf.all.rp_filter=0 net.ipv4.conf.default.rp_filter=0 net.ipv4.conf.leaf1.rp_filter=0 net.ipv4.conf.leaf2.rp_filter=0 net.ipv6.conf.all.disable_ipv6=0 net.ipv6.conf.default.disable_ipv6=0 net.ipv6.conf.default.accept_ra_defrtr=0
+        - ip route replace 127.0.0.0/8 dev lo scope link
+        - sh -c 'ip route del default dev eth0 || true'
+  nodes:
+    nat:
+      kind: linux
+      image: quay.io/frrouting/frr:10.4.1
+      sysctls:
+        net.ipv4.ip_forward: 1
+        net.ipv4.fib_multipath_hash_policy: 1
+        net.ipv6.conf.all.disable_ipv6: 0
+        net.ipv6.conf.default.disable_ipv6: 0
+        net.ipv6.conf.default.accept_ra_defrtr: 0
+      binds:
+        - ../common/frr/daemons:/etc/frr/daemons:ro
+        - rendered/nat.conf:/etc/frr/frr.conf:ro
+    spine1:
+      kind: linux
+      group: spine
+      binds:
+        - rendered/spine1.conf:/etc/frr/frr.conf:ro
+    spine2:
+      kind: linux
+      group: spine
+      binds:
+        - rendered/spine2.conf:/etc/frr/frr.conf:ro
+    leaf1:
+      kind: linux
+      group: router
+      binds:
+        - rendered/leaf1.conf:/etc/frr/frr.conf:ro
+    leaf2:
+      kind: linux
+      group: router
+      binds:
+        - rendered/leaf2.conf:/etc/frr/frr.conf:ro
+    client:
+      kind: linux
+      group: router
+      binds:
+        - rendered/client.conf:/etc/frr/frr.conf:ro
+    cp:
+      kind: linux
+      group: k8s-frr
+      network-mode: container:osk8s-control-plane
+      binds:
+        - rendered/cp.conf:/etc/frr/frr.conf:ro
+    l4lb1:
+      kind: linux
+      group: k8s-frr
+      network-mode: container:osk8s-worker
+      binds:
+        - rendered/l4lb1.conf:/etc/frr/frr.conf:ro
+    l4lb2:
+      kind: linux
+      group: k8s-frr
+      network-mode: container:osk8s-worker2
+      binds:
+        - rendered/l4lb2.conf:/etc/frr/frr.conf:ro
+    l7lb1:
+      kind: linux
+      group: k8s-frr
+      network-mode: container:osk8s-worker3
+      binds:
+        - rendered/l7lb1.conf:/etc/frr/frr.conf:ro
+    osctl1:
+      kind: linux
+      group: k8s-frr
+      network-mode: container:osk8s-worker4
+      binds:
+        - rendered/osctl1.conf:/etc/frr/frr.conf:ro
+    cmp1:
+      kind: linux
+      group: k8s-frr
+      network-mode: container:osk8s-worker5
+      binds:
+        - rendered/cmp1.conf:/etc/frr/frr.conf:ro
+    cmp2:
+      kind: linux
+      group: k8s-frr
+      network-mode: container:osk8s-worker6
+      binds:
+        - rendered/cmp2.conf:/etc/frr/frr.conf:ro
+  links:
+    - endpoints: ["nat:eth1", "spine1:eth3"]
+    - endpoints: ["nat:eth2", "spine2:eth3"]
+    - endpoints: ["leaf1:eth1", "spine1:eth1"]
+    - endpoints: ["leaf1:eth2", "spine2:eth1"]
+    - endpoints: ["leaf2:eth1", "spine1:eth2"]
+    - endpoints: ["leaf2:eth2", "spine2:eth2"]
+    - endpoints: ["leaf1:eth3", "client:leaf1"]
+    - endpoints: ["leaf2:eth3", "client:leaf2"]
+    - endpoints: ["leaf1:eth4", "cp:leaf1"]
+    - endpoints: ["leaf2:eth4", "cp:leaf2"]
+    - endpoints: ["leaf1:eth5", "l4lb1:leaf1"]
+    - endpoints: ["leaf2:eth5", "l4lb1:leaf2"]
+    - endpoints: ["leaf1:eth6", "l4lb2:leaf1"]
+    - endpoints: ["leaf2:eth6", "l4lb2:leaf2"]
+    - endpoints: ["leaf1:eth7", "l7lb1:leaf1"]
+    - endpoints: ["leaf2:eth7", "l7lb1:leaf2"]
+    - endpoints: ["leaf1:eth8", "osctl1:leaf1"]
+    - endpoints: ["leaf2:eth8", "osctl1:leaf2"]
+    - endpoints: ["leaf1:eth9", "cmp1:leaf1"]
+    - endpoints: ["leaf2:eth9", "cmp1:leaf2"]
+    - endpoints: ["leaf1:eth10", "cmp2:leaf1"]
+    - endpoints: ["leaf2:eth10", "cmp2:leaf2"]

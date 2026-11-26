@@ -1,0 +1,70 @@
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+name: osk8s
+networking:
+  disableDefaultCNI: true
+  kubeProxyMode: none
+  podSubnet: "10.230.0.0/20"
+  serviceSubnet: "10.231.0.0/16"
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-ip: "10.230.255.10"
+  - role: worker
+    labels:
+      infra-lab/group: l4lb
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-ip: "10.230.255.11"
+  - role: worker
+    labels:
+      infra-lab/group: l4lb
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-ip: "10.230.255.12"
+  - role: worker
+    labels:
+      infra-lab/group: l7lb
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-ip: "10.230.255.13"
+  - role: worker
+    labels:
+      infra-lab/group: os-controller
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-ip: "10.230.255.14"
+  - role: worker
+    labels:
+      infra-lab/group: os-compute
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-ip: "10.230.255.15"
+  - role: worker
+    labels:
+      infra-lab/group: os-compute
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-ip: "10.230.255.16"

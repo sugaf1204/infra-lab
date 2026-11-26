@@ -1,0 +1,39 @@
+k8sServiceHost: osk8s-control-plane
+k8sServicePort: 6443
+ipam:
+  mode: kubernetes
+# トンネルなし（native routing）。Pod /32 はホスト FRR がカーネル経路から広告する。
+routingMode: native
+ipv4NativeRoutingCIDR: 10.230.0.0/16
+autoDirectNodeRoutes: false
+endpointRoutes:
+  enabled: true
+enableIPv4Masquerade: true
+bpf:
+  hostLegacyRouting: true
+  masquerade: false
+bgpControlPlane:
+  enabled: true
+kubeProxyReplacement: true
+socketLB:
+  enabled: false
+# L4LB は DSR + IPIP。Geneve DSR は Cilium 管理外のバックエンド（OpenStack VM）宛てを破棄するため IPIP を使う。
+loadBalancer:
+  mode: dsr
+  dsrDispatch: ipip
+  # L4LB は複数台で同じ VIP を広告する。ECMP の再計算や片系断で別の L4LB に届いても
+  # 同じバックエンドを選ぶよう、L4LB 間で結果が一致する Maglev を使う。
+  algorithm: maglev
+devices: "leaf+,lo"
+nodePort:
+  directRoutingDevice: "lo"
+rollOutCiliumPods: true
+image:
+  useDigest: false
+envoy:
+  image:
+    useDigest: false
+operator:
+  replicas: 1
+  image:
+    useDigest: false

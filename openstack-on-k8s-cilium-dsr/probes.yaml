@@ -1,0 +1,59 @@
+# L4LB VIP プールと、専用 worker（l7lb）上の L7LB 相当 Pod への DSR 検証用 Service
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: l4lb
+spec:
+  blocks:
+    - cidr: 10.230.250.0/28
+  serviceSelector:
+    matchLabels:
+      infra-lab/l4lb: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-probe
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: l7lb
+  namespace: lab-probe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: l7lb
+  template:
+    metadata:
+      labels:
+        app: l7lb
+    spec:
+      nodeSelector:
+        infra-lab/group: l7lb
+      containers:
+        - name: whoami
+          # 応答に RemoteAddr（接続元 IP）を含むため、クライアント IP 保持を確認できる
+          image: traefik/whoami:v1.11.0
+          args: ["--port=80"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: l7lb
+  namespace: lab-probe
+  labels:
+    infra-lab/l4lb: "true"
+  annotations:
+    lbipam.cilium.io/ips: 10.230.250.1
+spec:
+  type: LoadBalancer
+  loadBalancerClass: io.cilium/bgp-control-plane
+  externalTrafficPolicy: Cluster
+  selector:
+    app: l7lb
+  ports:
+    # DSR IPIP はポート情報を運ばないため port と targetPort を一致させる
+    - port: 80
+      targetPort: 80

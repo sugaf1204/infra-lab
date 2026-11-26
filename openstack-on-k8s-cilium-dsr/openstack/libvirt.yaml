@@ -1,0 +1,20 @@
+images:
+  tags:
+    libvirt: quay.io/airshipit/libvirt:2026.2-ubuntu_resolute
+conf:
+  ceph:
+    enabled: false
+dependencies:
+  dynamic:
+    targeted:
+      openvswitch:
+        libvirt:
+          pod: []
+pod:
+  tolerations:
+    libvirt:
+      enabled: true
+      tolerations:
+        - key: infra-lab/group
+          operator: Exists
+          effect: NoSchedule
