@@ -1,0 +1,8 @@
+# rabbitmq / mariadb / memcached 共通
+pod:
+  replicas:
+    server: 1
+volume:
+  class_name: standard
+  backup:
+    enabled: false

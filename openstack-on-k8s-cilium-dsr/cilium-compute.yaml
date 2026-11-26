@@ -1,0 +1,13 @@
+# compute ノードは Leaf 向け NIC を OVS ピアブリッジ（br-bgp-0/1）に収容するため、
+# Cilium のデータパスはブリッジの内部ポートに付ける。
+apiVersion: cilium.io/v2
+kind: CiliumNodeConfig
+metadata:
+  name: os-compute
+  namespace: kube-system
+spec:
+  nodeSelector:
+    matchLabels:
+      infra-lab/group: os-compute
+  defaults:
+    devices: "br-bgp+ lo"

@@ -1,0 +1,119 @@
+! データセンター向けプロファイル（BGP 設定やタイマーの最適化）
+frr defaults datacenter
+hostname {{ node.name }}
+!
+interface lo
+ ip address {{ node.address }}/32
+!
+! --- プレフィックスリスト（経路フィルタ） ---
+! 自ノードのループバック IP のみを許可
+ip prefix-list NODE-LOOPBACK permit {{ node.address }}/32
+! Pod IP や Service VIP など /32 ホストルートのみを許可
+ip prefix-list HOST-ROUTES permit 0.0.0.0/0 ge 32
+! デフォルトルート（0.0.0.0/0）のみを許可
+ip prefix-list DEFAULT-ONLY permit 0.0.0.0/0
+! すべての経路を拒否（Cilium への不要な経路広告を抑止）
+ip prefix-list DENY-ALL deny 0.0.0.0/0 le 32
+!
+! --- ルートマップ ---
+! connected 経路から自ノードのループバック IP のみを抽出して BGP に再配布
+route-map NODE-LOOPBACK permit 10
+ match ip address prefix-list NODE-LOOPBACK
+!
+! カーネル経路から Cilium が生成した Pod /32 ルートのみを抽出して BGP に再配布
+route-map PODS permit 10
+ match ip address prefix-list HOST-ROUTES
+!
+! Cilium から学習した Service VIP (/32) の next-hop を自ノード IP に書き換え（ToR 側への転送先を自ノードにする）
+route-map CILIUM-VIPS permit 10
+ match ip address prefix-list HOST-ROUTES
+!
+! ToR から学習したデフォルトルートをカーネル FIB に導入する際、
+! 送信元 IP（src）として自ノードのループバック IP を設定（eBGP Unnumbered 対策）
+route-map INSTALL-FABRIC permit 10
+ match ip address prefix-list DEFAULT-ONLY
+ set src {{ node.address }}
+!
+! BGP 学習経路のカーネル反映時に上記ルートマップを適用
+ip protocol bgp route-map INSTALL-FABRIC
+!
+! --- OVN BGP プラグイン用 VRF ---
+! ovnvrf10: chassis ごとの OVN 論理ルーターが外向きデフォルトを学習するテーブル 10
+route-map INSTALL-DEFAULT permit 10
+ match ip address prefix-list DEFAULT-ONLY
+!
+vrf ovnvrf10
+ ip protocol bgp route-map INSTALL-DEFAULT
+exit-vrf
+!
+router bgp {{ node.asn }} vrf ovnvrf10
+ bgp router-id {{ node.address }}
+ bgp bestpath as-path multipath-relax
+ address-family ipv4 unicast
+  import vrf default
+  maximum-paths 2
+ exit-address-family
+!
+! ovnvrf42: OVN がローカル VM の固定 IP /32 を入れるテーブル 42
+router bgp {{ node.asn }} vrf ovnvrf42
+ bgp router-id {{ node.address }}
+ address-family ipv4 unicast
+  redistribute kernel route-map PODS
+ exit-address-family
+!
+! --- BGP 設定 ---
+router bgp {{ node.asn }}
+ bgp router-id {{ node.address }}
+ ! IPv4 ユニキャストの自動有効化を無効化
+ no bgp default ipv4-unicast
+ ! Cilium からの VIP 更新がローカルアドレス（martian）を next-hop に持っていても受け入れる
+ bgp allow-martian-nexthop
+ !
+ ! --- Cilium との内部 BGP ピアリング（127.0.0.2 -> 127.0.0.1）---
+ neighbor CILIUM peer-group
+ neighbor CILIUM remote-as 65201
+ ! 全ノード共通の CiliumBGPClusterConfig（peer ASN 65200 を指定）に合わせるため、
+ ! FRR 側で ASN を 65200 に置き換えて見せる
+ neighbor CILIUM local-as 65200 no-prepend replace-as
+ neighbor CILIUM update-source lo
+ neighbor CILIUM ebgp-multihop 2
+ ! Cilium (127.0.0.2) からの接続をリッスン
+ bgp listen range 127.0.0.2/32 peer-group CILIUM
+ !
+ ! --- Leaf スイッチとの外部 BGP ピアリング ---
+ bgp bestpath as-path multipath-relax
+ neighbor LEAVES peer-group
+ neighbor LEAVES remote-as external
+ neighbor LEAVES timers 3 9
+ ! Leaf1（leaf1）および Leaf2（leaf2）との eBGP Unnumbered
+ neighbor leaf1 interface peer-group LEAVES
+ neighbor leaf2 interface peer-group LEAVES
+ ! OVS 収容後は NIC（leaf1/leaf2）ではなくピアブリッジの内部ポートで同じ Leaf とピアを張る
+ neighbor br-bgp-0 interface peer-group LEAVES
+ neighbor br-bgp-1 interface peer-group LEAVES
+ !
+ address-family ipv4 unicast
+  ! 自ノードの Loopback IP（connected）を BGP に再配布
+  redistribute connected route-map NODE-LOOPBACK
+  ! Cilium の Pod /32（kernel）を BGP に再配布
+  redistribute kernel route-map PODS
+  ! OVN が広告対象にした VM 固定 IP /32 を取り込む
+  import vrf ovnvrf42
+  !
+  ! Cilium ピアを有効化
+  neighbor CILIUM activate
+  ! Cilium から受信する VIP を /32 に制限
+  neighbor CILIUM route-map CILIUM-VIPS in
+  ! Cilium へは経路を広告しない（不要なループやルーティング混乱を防止）
+  neighbor CILIUM prefix-list DENY-ALL out
+  !
+  ! Leaf ピアを有効化
+  neighbor LEAVES activate
+  ! Leaf からはデフォルトルートのみ受信
+  neighbor LEAVES prefix-list DEFAULT-ONLY in
+  ! Leaf へは Node IP、Pod IP、VIP の /32 のみを広報
+  neighbor LEAVES prefix-list HOST-ROUTES out
+  ! Leaf 2 台への ECMP（最大 2 パス）
+  maximum-paths 2
+ exit-address-family
+!

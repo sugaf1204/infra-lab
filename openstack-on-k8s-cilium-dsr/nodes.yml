@@ -1,0 +1,18 @@
+# leaf のホスト収容ポート。topology.clab.yml の links と対応させる。
+host_ports: [eth3, eth4, eth5, eth6, eth7, eth8, eth9, eth10]
+fabric_nodes:
+  - {name: nat, role: nat, address: 100.64.1.1, asn: 65099, spine1_ip: 100.64.1.1/30, spine2_ip: 100.64.1.5/30}
+  - {name: spine1, role: spine, address: 10.212.255.3, asn: 65001, nat_local: 100.64.1.2/30, nat_gw: 100.64.1.1}
+  - {name: spine2, role: spine, address: 10.212.255.4, asn: 65002, nat_local: 100.64.1.6/30, nat_gw: 100.64.1.5}
+  - {name: leaf1, role: leaf, address: 10.212.255.1, asn: 65101}
+  - {name: leaf2, role: leaf, address: 10.212.255.2, asn: 65102}
+  # 検証クライアント（クライアント IP 保持の確認元）
+  - {name: client, role: client, address: 10.212.255.100, asn: 65300}
+  # Kind ノードと同じネットワーク名前空間で動くホスト FRR
+  - {name: cp, role: node, address: 10.230.255.10, asn: 65210}
+  - {name: l4lb1, role: node, address: 10.230.255.11, asn: 65211}
+  - {name: l4lb2, role: node, address: 10.230.255.12, asn: 65212}
+  - {name: l7lb1, role: node, address: 10.230.255.13, asn: 65213}
+  - {name: osctl1, role: node, address: 10.230.255.14, asn: 65214}
+  - {name: cmp1, role: compute, address: 10.230.255.15, asn: 65215}
+  - {name: cmp2, role: compute, address: 10.230.255.16, asn: 65216}

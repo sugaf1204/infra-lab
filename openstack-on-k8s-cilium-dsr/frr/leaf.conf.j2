@@ -1,0 +1,44 @@
+! データセンター向けプロファイル
+frr defaults datacenter
+hostname {{ node.name }}
+!
+interface lo
+ ip address {{ node.address }}/32
+exit
+!
+ip prefix-list HOST-ROUTES permit 0.0.0.0/0 ge 32
+ip prefix-list DEFAULT-ONLY permit 0.0.0.0/0
+ip prefix-list HOST-AND-DEFAULT permit 0.0.0.0/0
+ip prefix-list HOST-AND-DEFAULT permit 0.0.0.0/0 ge 32
+!
+router bgp {{ node.asn }}
+ bgp router-id {{ node.address }}
+ no bgp default ipv4-unicast
+ bgp bestpath as-path multipath-relax
+ !
+ ! 対向 Spine（spine1, spine2）向けピアグループ
+ neighbor SPINES peer-group
+ neighbor SPINES remote-as external
+ neighbor SPINES timers 3 9
+ neighbor eth1 interface peer-group SPINES
+ neighbor eth2 interface peer-group SPINES
+ !
+ ! ホスト（Kind ノード相乗り FRR と検証クライアント）向けピアグループ
+ neighbor HOSTS peer-group
+ neighbor HOSTS remote-as external
+ neighbor HOSTS timers 3 9
+{% for port in host_ports %}
+ neighbor {{ port }} interface peer-group HOSTS
+{% endfor %}
+ !
+ address-family ipv4 unicast
+  network {{ node.address }}/32
+  neighbor SPINES activate
+  neighbor SPINES prefix-list HOST-AND-DEFAULT in
+  neighbor SPINES prefix-list HOST-ROUTES out
+  neighbor HOSTS activate
+  neighbor HOSTS prefix-list HOST-ROUTES in
+  neighbor HOSTS prefix-list DEFAULT-ONLY out
+  maximum-paths 2
+ exit-address-family
+!

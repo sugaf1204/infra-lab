@@ -1,0 +1,37 @@
+# OpenStack VM（Cilium 管理外）をバックエンドにする L4LB Service。
+# セレクターなしの Service に VM の固定 IP を EndpointSlice で与える。
+apiVersion: v1
+kind: Service
+metadata:
+  name: vm-web
+  namespace: lab-probe
+  labels:
+    infra-lab/l4lb: "true"
+  annotations:
+    lbipam.cilium.io/ips: 10.230.250.2
+spec:
+  type: LoadBalancer
+  loadBalancerClass: io.cilium/bgp-control-plane
+  externalTrafficPolicy: Cluster
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: vm-web-1
+  namespace: lab-probe
+  labels:
+    kubernetes.io/service-name: vm-web
+addressType: IPv4
+ports:
+  - name: http
+    port: 80
+    protocol: TCP
+endpoints:
+  - addresses: ["10.240.0.21"]
+    conditions: {ready: true}
+  - addresses: ["10.240.0.22"]
+    conditions: {ready: true}

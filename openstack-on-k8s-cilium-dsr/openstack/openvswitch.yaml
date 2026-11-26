@@ -1,0 +1,25 @@
+images:
+  tags:
+    openvswitch_db_server: quay.io/airshipit/openvswitch:latest-ubuntu_resolute
+    openvswitch_vswitchd: quay.io/airshipit/openvswitch:latest-ubuntu_resolute
+# ovn-controller を root で動かす（VRF 作成に NET_ADMIN が要る）と /run/openvswitch が root 所有になる。
+# ovsdb-server と vswitchd も root に揃えないと conf.db を開けず CrashLoop する。
+conf:
+  ovs_user_name: "root:root"
+  openvswitch_db_server:
+    ptcp_port: 6640
+pod:
+  security_context:
+    ovs:
+      pod:
+        runAsUser: 0
+      container:
+        server:
+          runAsUser: 0
+  tolerations:
+    openvswitch:
+      enabled: true
+      tolerations:
+        - key: infra-lab/group
+          operator: Exists
+          effect: NoSchedule

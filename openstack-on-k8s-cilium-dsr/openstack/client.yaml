@@ -1,0 +1,25 @@
+# OpenStack CLI を実行する Pod（管理者資格情報は keystone チャートの Secret から読む）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openstack-client
+  namespace: openstack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openstack-client
+  template:
+    metadata:
+      labels:
+        app: openstack-client
+    spec:
+      nodeSelector:
+        openstack-control-plane: enabled
+      containers:
+        - name: client
+          image: quay.io/airshipit/openstack-client:2026.2-ubuntu_resolute
+          command: ["sleep", "infinity"]
+          envFrom:
+            - secretRef:
+                name: keystone-keystone-admin

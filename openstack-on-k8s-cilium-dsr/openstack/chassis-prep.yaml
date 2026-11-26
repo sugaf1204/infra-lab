@@ -1,0 +1,54 @@
+# ovn チャートに任意の external-ids を設定する値がないため、compute ノードで
+# ovn-bgp エージェント拡張が参照するキーを維持する DaemonSet。
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: chassis-prep
+  namespace: openstack
+spec:
+  selector:
+    matchLabels:
+      app: chassis-prep
+  template:
+    metadata:
+      labels:
+        app: chassis-prep
+    spec:
+      hostNetwork: true
+      nodeSelector:
+        openvswitch: enabled
+      tolerations:
+        - key: infra-lab/group
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: prep
+          image: quay.io/airshipit/openvswitch:latest-ubuntu_resolute
+          env:
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          command:
+            - bash
+            - -c
+            - |
+              while true; do
+                ovs-vsctl --timeout=5 set open . \
+                  external-ids:neutron-bgp-peer-bridges=br-bgp-0,br-bgp-1 \
+                  external-ids:neutron-bgp-interconnect-bridge=br-ex \
+                  external-ids:ovn-encap-ip="$NODE_IP" || true
+                # ovn チャートはブリッジを OpenFlow13 のみで作るが、ovn-bgp エージェント拡張は
+                # ovs-ofctl を OpenFlow10 の bundle で実行する。制限を外して OVS 既定（全バージョン）に戻す。
+                for br in br-ex br-bgp-0 br-bgp-1; do
+                  ovs-vsctl --timeout=5 -- --if-exists clear bridge "$br" protocols || true
+                done
+                sleep 15
+              done
+          volumeMounts:
+            - name: run-ovs
+              mountPath: /run/openvswitch
+      volumes:
+        - name: run-ovs
+          hostPath:
+            path: /run/openvswitch

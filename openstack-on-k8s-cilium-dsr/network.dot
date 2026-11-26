@@ -1,0 +1,56 @@
+digraph osk8s {
+  graph [rankdir=TB, bgcolor="#ffffff", pad=0.2, nodesep=0.35, ranksep=0.7,
+         fontname="Helvetica", newrank=true];
+  node [shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#64748b",
+        fontname="Helvetica", fontcolor="#172b4d", margin="0.14,0.1"];
+  edge [color="#475569", penwidth=1.4, fontname="Helvetica", fontsize=10];
+
+  client [label="client · AS65300\nlo 10.212.255.100/32"];
+  leaf1 [label="leaf1 · AS65101\nホスト収容 eth3–eth10"];
+  leaf2 [label="leaf2 · AS65102\nホスト収容 eth3–eth10"];
+  {rank=same; leaf1; leaf2}
+  client -> leaf1 [dir=none, label="leaf1 ↔ eth3"];
+  client -> leaf2 [dir=none, label="leaf2 ↔ eth3"];
+
+  subgraph cluster_l4 {
+    label="L4LB frontend ×2（osk8s-worker / worker2）"; labelloc=b;
+    style=rounded; color="#94a3b8"; margin=12;
+    l4frr [label="ホスト FRR · AS65211 / 65212\nlo 10.230.255.11 / .12"];
+    l4cil [label="Cilium · AS65201\nVIP 10.230.250.1 / .2 を広告\nDSR IPIP + Maglev"];
+    l4frr -> l4cil [dir=back, style=dashed, color="#2563a5", label="eBGP 127.0.0.2 → 127.0.0.1"];
+  }
+  subgraph cluster_l7 {
+    label="L7LB frontend（osk8s-worker3）"; labelloc=b;
+    style=rounded; color="#94a3b8"; margin=12;
+    l7frr [label="ホスト FRR · AS65213\nlo 10.230.255.13"];
+    l7pod [label="L7LB 相当 Pod（whoami）\nCilium が IPIP を終端", fillcolor="#f0fdf4"];
+    l7frr -> l7pod [dir=none, label="lxc… ↔ eth0"];
+  }
+  subgraph cluster_ctl {
+    label="OpenStack controller（osk8s-worker4）"; labelloc=b;
+    style=rounded; color="#94a3b8"; margin=12;
+    ctl [label="ホスト FRR · AS65214\nlo 10.230.255.14\nKeystone / Glance / Placement\nNova / Neutron(ovn-bgp) / OVN NB・SB"];
+  }
+  subgraph cluster_cmp {
+    label="OpenStack compute ×2（osk8s-worker5 / worker6）· DaemonSet は hostNetwork"; labelloc=b;
+    style=rounded; color="#94a3b8"; margin=12;
+    cmpfrr [label="ホスト FRR · AS65215 / 65216\nlo 10.230.255.15 / .16\nピア: br-bgp-0 / br-bgp-1\nVRF ovnvrf42 / ovnvrf10"];
+    ovn [label="OVS + OVN\nbr-bgp-0(leaf1) / br-bgp-1(leaf2)\nbgp-lr-<chassis> → bgp-lr-main → br-ex"];
+    vm [label="VM vm1 / vm2\n10.240.0.21 / .22\ntunl0 で IPIP 受信 · lo に VIP", fillcolor="#f0fdf4"];
+    cmpfrr -> ovn [dir=back, style=dashed, color="#2563a5", label="VM /32 をテーブル 42 に注入"];
+    ovn -> vm [dir=none, label="tap… · flat network"];
+  }
+
+  leaf1 -> l4frr [dir=none, label="eth5/eth6 ↔ leaf1"];
+  leaf2 -> l4frr [dir=none, label="eth5/eth6 ↔ leaf2"];
+  leaf1 -> l7frr [dir=none, label="eth7"];
+  leaf2 -> l7frr [dir=none, label="eth7"];
+  leaf1 -> ctl [dir=none, label="eth8"];
+  leaf2 -> ctl [dir=none, label="eth8"];
+  leaf1 -> ovn [dir=none, label="eth9/eth10 ↔ leaf1"];
+  leaf2 -> ovn [dir=none, label="eth9/eth10 ↔ leaf2"];
+
+  l4cil -> l7pod [color="#b45309", constraint=false, label="IPIP（外側宛先 = Pod IP）"];
+  l4cil -> vm [color="#b45309", constraint=false, label="IPIP（外側宛先 = VM 固定 IP）"];
+  vm -> client [color="#15803d", constraint=false, label="VIP 送信元で直接応答"];
+}
