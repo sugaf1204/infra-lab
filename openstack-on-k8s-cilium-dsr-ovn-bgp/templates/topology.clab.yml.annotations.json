@@ -1,0 +1,108 @@
+{
+  "nodeAnnotations": [
+    {
+      "id": "nat",
+      "position": {
+        "x": 525,
+        "y": 0
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "spine1",
+      "position": {
+        "x": 345,
+        "y": 155
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "spine2",
+      "position": {
+        "x": 705,
+        "y": 155
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "leaf1",
+      "position": {
+        "x": 300,
+        "y": 340
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "leaf2",
+      "position": {
+        "x": 750,
+        "y": 340
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "client",
+      "position": {
+        "x": 0,
+        "y": 590
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "cp",
+      "position": {
+        "x": 150,
+        "y": 590
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "l4lb1",
+      "position": {
+        "x": 300,
+        "y": 590
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "l4lb2",
+      "position": {
+        "x": 450,
+        "y": 590
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "l7lb1",
+      "position": {
+        "x": 600,
+        "y": 590
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "osctl1",
+      "position": {
+        "x": 750,
+        "y": 590
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "cmp1",
+      "position": {
+        "x": 900,
+        "y": 590
+      },
+      "labelPosition": "bottom"
+    },
+    {
+      "id": "cmp2",
+      "position": {
+        "x": 1050,
+        "y": 590
+      },
+      "labelPosition": "bottom"
+    }
+  ]
+}

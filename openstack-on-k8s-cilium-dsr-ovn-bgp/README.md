@@ -139,6 +139,8 @@ Leaf ─ k8s-leaf1/2 ─ [ホストカーネル: FRR + Cilium] ─ ovn-host0 ═
 
 ## 構成ファイル
 
+Containerlab Desktop では、上から NAT、Spine、Leaf、接続ノードの順に表示する。初回のレンダリングで表示用 JSON をトポロジーの隣に配置し、以後は Desktop で保存した配置を保持する。
+
 - [nodes.yml](nodes.yml): ノード・ASN・アドレスの単一の定義。[render.yml](render.yml) が FRR 設定（[frr/](frr/)）、Containerlab トポロジー、Kind クラスタ定義（[templates/](templates/)）を `rendered/` に生成する。
 - [lab.sh](lab.sh): fabric・Kind・Cilium（[cilium-values.yaml](cilium-values.yaml)、[bgp.yaml](bgp.yaml)）。
 - [openstack.sh](openstack.sh) / [openstack/](openstack/): openstack-helm の導入と values。[node-prep.sh](node-prep.sh): compute ノードのホスト側ネットワーク。

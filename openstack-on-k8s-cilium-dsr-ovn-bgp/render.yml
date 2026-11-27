@@ -31,3 +31,10 @@
       loop:
         - topology.clab.yml
         - cluster.yaml
+
+    - name: Seed the Containerlab Desktop Clos layout
+      ansible.builtin.copy:
+        src: "{{ lab_dir }}/templates/topology.clab.yml.annotations.json"
+        dest: "{{ lab_dir }}/rendered/topology.clab.yml.annotations.json"
+        mode: "0644"
+        force: false
