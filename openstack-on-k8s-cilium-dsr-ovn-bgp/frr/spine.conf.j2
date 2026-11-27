@@ -1,0 +1,57 @@
+! データセンター向けプロファイル
+frr defaults datacenter
+hostname {{ node.name }}
+!
+interface lo
+ ip address {{ node.address }}/32
+exit
+!
+interface eth3
+ ip address {{ node.nat_local }}
+exit
+!
+! NAT 向けのデフォルトルートは Spine の静的ルートとしてのみ設定（NAT IP は BGP で流さない）
+ip route 0.0.0.0/0 {{ node.nat_gw }}
+!
+ip prefix-list DEFAULT-ONLY permit 0.0.0.0/0
+ip prefix-list HOST-ROUTES permit 0.0.0.0/0 ge 32
+ip prefix-list HOST-AND-DEFAULT permit 0.0.0.0/0
+ip prefix-list HOST-AND-DEFAULT permit 0.0.0.0/0 ge 32
+ip prefix-list DENY-ALL deny 0.0.0.0/0 le 32
+!
+route-map DEFAULT-ONLY permit 10
+ match ip address prefix-list DEFAULT-ONLY
+!
+route-map SET-SRC permit 10
+ set src {{ node.address }}
+!
+ip protocol bgp route-map SET-SRC
+!
+router bgp {{ node.asn }}
+ bgp router-id {{ node.address }}
+ no bgp default ipv4-unicast
+ bgp bestpath as-path multipath-relax
+ !
+ neighbor LEAVES peer-group
+ neighbor LEAVES remote-as external
+ neighbor LEAVES timers 3 9
+ neighbor eth1 interface peer-group LEAVES
+ neighbor eth2 interface peer-group LEAVES
+ !
+ neighbor NAT peer-group
+ neighbor NAT remote-as external
+ neighbor NAT timers 3 9
+ neighbor eth3 interface peer-group NAT
+ !
+ address-family ipv4 unicast
+  network {{ node.address }}/32
+  redistribute static route-map DEFAULT-ONLY
+  neighbor LEAVES activate
+  neighbor LEAVES prefix-list HOST-ROUTES in
+  neighbor LEAVES prefix-list HOST-AND-DEFAULT out
+  neighbor NAT activate
+  neighbor NAT prefix-list DENY-ALL in
+  neighbor NAT prefix-list HOST-ROUTES out
+  maximum-paths 4
+ exit-address-family
+!

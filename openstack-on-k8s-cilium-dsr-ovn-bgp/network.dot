@@ -1,0 +1,44 @@
+digraph lab {
+  graph [rankdir=TB, fontname="Noto Sans CJK JP", fontsize=11, nodesep=0.35, ranksep=0.6, newrank=true, compound=true];
+  node [shape=plain, fontname="Noto Sans CJK JP", fontsize=10];
+  edge [fontname="Noto Sans CJK JP", fontsize=9, arrowhead=none];
+
+  nat [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4"><tr><td><b>nat</b> AS65099<br/>外向き MASQUERADE</td></tr></table>>];
+  spine1 [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4"><tr><td><b>spine1</b> AS65001<br/>10.212.255.3</td></tr></table>>];
+  spine2 [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4"><tr><td><b>spine2</b> AS65002<br/>10.212.255.4</td></tr></table>>];
+  leaf1 [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4"><tr><td><b>leaf1</b> AS65101<br/>eth3..eth10: ホスト向け Unnumbered</td></tr></table>>];
+  leaf2 [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4"><tr><td><b>leaf2</b> AS65102<br/>eth3..eth10: ホスト向け Unnumbered</td></tr></table>>];
+  nat -> spine1; nat -> spine2;
+  spine1 -> leaf1; spine1 -> leaf2; spine2 -> leaf1; spine2 -> leaf2;
+
+  client [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4"><tr><td><b>client</b>（Kubernetes 外）AS65300<br/>10.212.255.100</td></tr></table>>];
+
+  subgraph cluster_k8s {
+    label="Kind クラスタ osk-bgp（各ノード: k8s-leaf1 / k8s-leaf2 で両 Leaf と eBGP Unnumbered、Cilium 127.0.0.2 ⇄ ホスト FRR 127.0.0.1）";
+    style=rounded; color="#555555";
+    cp [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4"><tr><td><b>cp</b> control-plane<br/>10.240.255.10</td></tr></table>>];
+    l4lb [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="#eef5ff"><tr><td><b>l4lb1 / l4lb2</b> L4LB frontend<br/>10.240.255.21 / .22<br/>Cilium が VIP 10.240.250.0/24 を広告<br/>Maglev + Geneve DSR</td></tr></table>>];
+    l7lb [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="#f3fff0"><tr><td><b>l7lb1</b> L7LB frontend<br/>10.240.255.31<br/>Pod: nginx（VM へ中継）</td></tr></table>>];
+    osctl [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4"><tr><td><b>osctl1</b> OpenStack controller<br/>10.240.255.41<br/>keystone / glance / placement / nova / neutron<br/>OVN NB・SB / northd</td></tr></table>>];
+    subgraph cluster_cmp {
+      label="cmp1 / cmp2  OpenStack compute（10.240.255.51 / .52）";
+      style=rounded; color="#aa6600";
+      host [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="#fff7e8"><tr><td><b>ホストカーネル</b><br/>FRR: テーブル 42 の VM /32 を Leaf へ広告<br/>Cilium: Geneve DSR 終端、k8s-leaf egress で VM IP → VIP<br/>ip rule: iif k8s-leaf1/2, cilium_geneve かつ宛先がテナント CIDR → table 100 → ovn-host0</td></tr></table>>];
+      ovs [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4"><tr><td><b>br-bgp-0</b>（BGP peer bridge）<br/>NIC = ovn-up0（veth）</td></tr><tr><td><b>OVN</b> bgp-lr-&lt;chassis&gt; → bgp-lr-main → flat network</td></tr></table>>];
+      vm [label=<<table border="1" cellborder="0" cellspacing="0" cellpadding="4" bgcolor="#f7f0ff"><tr><td><b>VM</b> vm1 10.250.0.11 / vm2 10.250.0.12<br/>TCP/80 に応答するだけ</td></tr></table>>];
+      host -> ovs [label="ovn-host0 ══ ovn-up0"];
+      ovs -> vm [label="tap"];
+    }
+  }
+
+  leaf1 -> client; leaf2 -> client;
+  leaf1 -> cp; leaf2 -> cp;
+  leaf1 -> l4lb; leaf2 -> l4lb;
+  leaf1 -> l7lb; leaf2 -> l7lb;
+  leaf1 -> osctl; leaf2 -> osctl;
+  leaf1 -> host [lhead=cluster_cmp]; leaf2 -> host [lhead=cluster_cmp];
+
+  client -> l4lb [color="#1a5fb4", style=dashed, arrowhead=normal, constraint=false, label="① client → VIP"];
+  l4lb -> host [color="#1a5fb4", style=dashed, arrowhead=normal, constraint=false, label="② Geneve DSR（外側: compute、内側: client → VM IP）"];
+  host -> client [color="#26a269", style=dashed, arrowhead=normal, constraint=false, label="③ 応答は L4LB を通らず VIP → client"];
+}

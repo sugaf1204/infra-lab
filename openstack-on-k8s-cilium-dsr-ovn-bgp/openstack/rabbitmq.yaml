@@ -1,0 +1,2 @@
+pod: {replicas: {server: 1}}
+volume: {class_name: standard}

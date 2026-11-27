@@ -1,0 +1,3 @@
+storage: pvc
+volume: {class_name: standard, size: 2Gi}
+volume_staging: {class_name: standard, size: 2Gi}

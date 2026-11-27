@@ -1,0 +1,21 @@
+images:
+  tags:
+    ovn_ovsdb_nb: quay.io/airshipit/ovn:ubuntu_resolute
+    ovn_ovsdb_sb: quay.io/airshipit/ovn:ubuntu_resolute
+    ovn_northd: quay.io/airshipit/ovn:ubuntu_resolute
+    ovn_controller: quay.io/airshipit/ovn:ubuntu_resolute
+volume:
+  ovn_ovsdb_nb: {class_name: standard, size: 1Gi}
+  ovn_ovsdb_sb: {class_name: standard, size: 1Gi}
+network:
+  interface:
+    # node-prep.sh がノードのループバック IP を載せたダミー IF。テナントは flat のみで Geneve は使わない。
+    tunnel: ovn-encap0
+conf:
+  # ovn-controller が VRF（ovnvrf42 / ovnvrf10）と経路をカーネルに作るには CAP_NET_ADMIN が要る。
+  # 既定の openvswitch ユーザーでは capability が落ちて「Unable to create VRF: Operation not permitted」になる。
+  ovs_user_name: root
+  ovn_bridge_mappings: public:br-ex
+  # ブリッジは openstack.sh が作る。OSH の auto_bridge_add は起動のたびに protocols=OpenFlow13 に戻し、
+  # OpenFlow10 でフローを入れる ovn-bgp エージェント拡張が失敗するため使わない。
+  auto_bridge_add: {}

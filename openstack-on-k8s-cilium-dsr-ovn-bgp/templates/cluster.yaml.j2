@@ -1,0 +1,22 @@
+# nodes.yml から生成。直接編集しない。
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+name: {{ lab_name }}
+networking:
+  disableDefaultCNI: true
+  kubeProxyMode: none
+  podSubnet: "{{ pod_subnet }}"
+  serviceSubnet: "{{ service_subnet }}"
+nodes:
+{% for node in k8s_nodes %}
+  - role: {{ 'control-plane' if node.group == 'control-plane' else 'worker' }}
+    labels:
+      lab.infra/group: {{ node.group }}
+      lab.infra/name: {{ node.name }}
+    kubeadmConfigPatches:
+      - |
+        kind: {{ 'InitConfiguration' if node.group == 'control-plane' else 'JoinConfiguration' }}
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-ip: "{{ node.address }}"
+{% endfor %}
